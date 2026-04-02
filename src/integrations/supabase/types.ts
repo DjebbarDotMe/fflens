@@ -378,7 +378,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      increment_click_count: { Args: { link_id: string }; Returns: undefined }
     }
     Enums: {
       availability_status: "in_stock" | "out_of_stock" | "unknown"

@@ -9,7 +9,7 @@ import { Save, Plus, Trash2, Shield, KeyRound } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { useNetworks, useUserCredentials } from "@/hooks/useSupabaseData";
+import { useNetworks, useUserCredentials, useProfile } from "@/hooks/useSupabaseData";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
@@ -19,9 +19,22 @@ export default function SettingsPage() {
   const { data: networks } = useNetworks();
   const { data: credentials, isLoading } = useUserCredentials();
   const { user } = useAuth();
+  const { data: profile } = useProfile(user?.id);
   const queryClient = useQueryClient();
   const [addOpen, setAddOpen] = useState(false);
   const [newCred, setNewCred] = useState({ network_id: "", affiliate_id: "", api_token: "" });
+  const [utmSource, setUtmSource] = useState("");
+  const [utmMedium, setUtmMedium] = useState("");
+  const [utmCampaign, setUtmCampaign] = useState("");
+  const [utmLoaded, setUtmLoaded] = useState(false);
+
+  // Load UTM values from profile
+  if (profile && !utmLoaded) {
+    setUtmSource(profile.utm_source || "");
+    setUtmMedium(profile.utm_medium || "");
+    setUtmCampaign(profile.utm_campaign || "");
+    setUtmLoaded(true);
+  }
 
   const handleAdd = async () => {
     if (!user) return;
@@ -46,6 +59,20 @@ export default function SettingsPage() {
     else {
       toast.success("Credential removed!");
       queryClient.invalidateQueries({ queryKey: ["user_credentials"] });
+    }
+  };
+
+  const handleSaveSettings = async () => {
+    if (!user) return;
+    const { error } = await supabase.from("profiles").update({
+      utm_source: utmSource || null,
+      utm_medium: utmMedium || null,
+      utm_campaign: utmCampaign || null,
+    }).eq("id", user.id);
+    if (error) toast.error(error.message);
+    else {
+      toast.success("Settings saved!");
+      queryClient.invalidateQueries({ queryKey: ["profile"] });
     }
   };
 
@@ -142,13 +169,13 @@ export default function SettingsPage() {
           <CardDescription>Applied automatically to all generated affiliate links.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div><Label>UTM Source</Label><Input placeholder="affiliatehub" /></div>
-          <div><Label>UTM Medium</Label><Input placeholder="affiliate" /></div>
-          <div><Label>UTM Campaign</Label><Input placeholder="default" /></div>
+          <div><Label>UTM Source</Label><Input placeholder="affiliatehub" value={utmSource} onChange={(e) => setUtmSource(e.target.value)} /></div>
+          <div><Label>UTM Medium</Label><Input placeholder="affiliate" value={utmMedium} onChange={(e) => setUtmMedium(e.target.value)} /></div>
+          <div><Label>UTM Campaign</Label><Input placeholder="default" value={utmCampaign} onChange={(e) => setUtmCampaign(e.target.value)} /></div>
         </CardContent>
       </Card>
 
-      <Button onClick={() => toast.success("Settings saved!")}><Save className="mr-2 h-4 w-4" /> Save Settings</Button>
+      <Button onClick={handleSaveSettings}><Save className="mr-2 h-4 w-4" /> Save Settings</Button>
     </div>
   );
 }
