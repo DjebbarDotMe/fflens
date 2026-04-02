@@ -13,6 +13,7 @@ import { toast } from "sonner";
 export default function AuthPage() {
   const { user, loading: authLoading } = useAuth();
   const [isLogin, setIsLogin] = useState(true);
+  const [isForgotPassword, setIsForgotPassword] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
