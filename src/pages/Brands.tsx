@@ -6,8 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Package, Globe } from "lucide-react";
-import { mockBrands } from "@/lib/mock-data";
+import { Plus, Package, Globe, Network } from "lucide-react";
+import { mockBrands, mockNetworks } from "@/lib/mock-data";
 import { networkTypeLabels, networkTypeColors } from "@/lib/affiliate-utils";
 
 export default function Brands() {
@@ -29,11 +29,11 @@ export default function Brands() {
             <div className="space-y-4">
               <div><Label>Brand Name</Label><Input placeholder="e.g. Amazon" /></div>
               <div><Label>Base URL</Label><Input placeholder="https://amazon.com" /></div>
-              <div><Label>Network Type</Label>
+              <div><Label>Network</Label>
                 <Select>
                   <SelectTrigger><SelectValue placeholder="Select network" /></SelectTrigger>
                   <SelectContent>
-                    {Object.entries(networkTypeLabels).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}
+                    {mockNetworks.map((n) => <SelectItem key={n.id} value={n.id}>{n.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
@@ -51,35 +51,45 @@ export default function Brands() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {mockBrands.map((brand) => (
-          <Card key={brand.id} className="hover:shadow-md transition-shadow">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-lg">{brand.name}</CardTitle>
-                <Badge className={networkTypeColors[brand.network_type]}>
-                  {networkTypeLabels[brand.network_type]}
-                </Badge>
-              </div>
-              <CardDescription className="flex items-center gap-1">
-                <Globe className="h-3 w-3" /> {brand.base_url}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Package className="h-4 w-4" />
-                  <span>{brand.product_count} products</span>
+        {mockBrands.map((brand) => {
+          const network = mockNetworks.find((n) => n.id === brand.network_id);
+          return (
+            <Card key={brand.id} className="hover:shadow-md transition-shadow">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-lg">{brand.name}</CardTitle>
+                  <Badge className={networkTypeColors[brand.network_type]}>
+                    {networkTypeLabels[brand.network_type]}
+                  </Badge>
                 </div>
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Template:</p>
-                  <code className="text-xs bg-muted p-2 rounded block break-all">
-                    {brand.affiliate_param_template}
-                  </code>
+                <CardDescription className="flex items-center gap-1">
+                  <Globe className="h-3 w-3" /> {brand.base_url}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Package className="h-4 w-4" />
+                    <span>{brand.product_count} products</span>
+                  </div>
+                  {network && (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Network className="h-4 w-4" />
+                      <span>{network.name}</span>
+                      <Badge variant="outline" className="text-xs">{network.auth_type}</Badge>
+                    </div>
+                  )}
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">Template:</p>
+                    <code className="text-xs bg-muted p-2 rounded block break-all">
+                      {brand.affiliate_param_template}
+                    </code>
+                  </div>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
     </div>
   );

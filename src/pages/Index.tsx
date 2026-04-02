@@ -1,9 +1,10 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Package, Store, MousePointerClick, DollarSign } from "lucide-react";
+import { Package, Store, MousePointerClick, DollarSign, AlertTriangle } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { mockProducts, mockAffiliateLinks, mockClicksOverTime, mockBrands } from "@/lib/mock-data";
+import { healthStatusColors, healthStatusLabels } from "@/lib/affiliate-utils";
 
 const stats = [
   { label: "Total Products", value: mockProducts.length, icon: Package, change: "+12%" },
@@ -13,6 +14,7 @@ const stats = [
 ];
 
 const topLinks = [...mockAffiliateLinks].sort((a, b) => b.clicks - a.clicks).slice(0, 5);
+const brokenLinks = mockAffiliateLinks.filter((l) => l.health_status === "broken");
 
 export default function Dashboard() {
   return (
@@ -21,6 +23,18 @@ export default function Dashboard() {
         <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
         <p className="text-muted-foreground">Overview of your affiliate product database.</p>
       </div>
+
+      {brokenLinks.length > 0 && (
+        <Card className="border-destructive bg-destructive/5">
+          <CardContent className="flex items-center gap-3 py-3">
+            <AlertTriangle className="h-5 w-5 text-destructive" />
+            <div className="text-sm">
+              <span className="font-medium">{brokenLinks.length} broken link{brokenLinks.length > 1 ? "s" : ""}</span>
+              <span className="text-muted-foreground"> — {brokenLinks.map((l) => l.product_name).join(", ")}</span>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         {stats.map((s) => (
@@ -70,6 +84,7 @@ export default function Dashboard() {
                 <TableHead className="text-right">Clicks</TableHead>
                 <TableHead className="text-right">Conversions</TableHead>
                 <TableHead className="text-right">Revenue</TableHead>
+                <TableHead>Health</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -80,6 +95,11 @@ export default function Dashboard() {
                   <TableCell className="text-right">{link.clicks.toLocaleString()}</TableCell>
                   <TableCell className="text-right">{link.conversions}</TableCell>
                   <TableCell className="text-right">${link.revenue.toLocaleString()}</TableCell>
+                  <TableCell>
+                    <Badge className={healthStatusColors[link.health_status]}>
+                      {healthStatusLabels[link.health_status]}
+                    </Badge>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
