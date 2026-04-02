@@ -1,81 +1,108 @@
 
 
-# Affiliate Product Database Platform
+# Gap Analysis: Your Prompt vs. Current Implementation
 
-## Overview
-Build a functional affiliate platform focused on managing a database of retail products from different brands. Each brand/network has its own logic for injecting affiliate parameters into product URLs. The platform starts with a dashboard and analytics view, with product/brand management at the core.
+Here's what's missing from our current build, mapped against your detailed prompt. I've adapted everything to our stack (React + Vite + Supabase, not Next.js).
 
-## Architecture
+---
 
-```text
-┌─────────────────────────────────────────────┐
-│  App Shell (Sidebar + Top Nav)              │
-├──────────┬──────────────────────────────────┤
-│ Sidebar  │  Main Content Area              │
-│          │                                  │
-│ Dashboard│  - Dashboard (stats + charts)    │
-│ Products │  - Product catalog (CRUD)        │
-│ Brands   │  - Brand/Network management     │
-│ Links    │  - Affiliate link generator      │
-│ Settings │  - Settings                      │
-└──────────┴──────────────────────────────────┘
-```
+## What We Already Have ✓
+- App shell with sidebar navigation (Dashboard, Products, Brands, Links, Settings)
+- Product data model with brand associations
+- Affiliate URL template system with placeholder injection
+- Dashboard with stats cards + Recharts click chart
+- Product search/filter by brand and category
+- Link generator with copy-to-clipboard
+- Network type labels (Amazon, Impact/CJ, Rakuten, ShareASale)
+- Settings page for affiliate ID config
 
-## Data Model (Supabase)
+## What's Missing — Prioritized
 
-- **brands** — id, name, slug, logo_url, base_url, affiliate_param_template (e.g. `?tag={affiliate_id}&utm_source=...`), network_type (Amazon, ShareASale, CJ, custom), created_at
-- **products** — id, brand_id (FK), name, description, image_url, original_url, price, currency, category, is_active, created_at
-- **affiliate_links** — id, product_id (FK), short_code, affiliate_url (generated), clicks, conversions, revenue, created_at
-- **link_clicks** — id, link_id (FK), timestamp, referrer, country, device
+### 1. Networks table (separate from brands)
+Your prompt distinguishes **networks** (Amazon, Impact, CJ, Rakuten) from **merchants/brands**. Currently we conflate them. We need:
+- A `networks` table with `api_base_url`, `auth_type`
+- Brands/merchants belong to a network
+- Impact network added (missing from current `network_type` enum)
 
-## Pages & Components
+### 2. User credentials management (encrypted)
+- `user_credentials` table: `user_id`, `network_id`, `affiliate_id`, `api_token_encrypted`
+- Settings page needs per-network credential input (not just a single affiliate ID)
+- Credentials stored encrypted in Supabase (pgcrypto)
 
-### 1. Dashboard (`/`)
-- Summary cards: Total Products, Active Brands, Total Clicks, Estimated Revenue
-- Line chart: clicks over time (last 30 days) using Recharts
-- Top performing products table
-- Recent activity feed
+### 3. Product fields: `sku`, `availability_status`, `merchant_id`
+Current `products` model is missing:
+- `sku` (unique per network)
+- `availability_status` enum: `in_stock`, `out_of_stock`, `unknown`
+- `merchant_id`
+- `updated_at` timestamp
+- Availability badge in product table UI
 
-### 2. Products (`/products`)
-- Searchable, filterable data table (by brand, category, status)
-- Add/Edit product dialog with form
-- Bulk import placeholder (for future CSV/API import)
-- Each row shows product name, brand, price, affiliate link status
+### 4. Link Health Monitor
+Entirely missing. Needs:
+- `link_health` table: `link_id`, `status_code`, `is_valid`, `error_message`, `last_checked_at`
+- Health status indicator (✓/✗) on each link in the Links page
+- Edge Function to check links via HTTP HEAD requests (no Puppeteer in our stack — use fetch with redirect follow)
+- "Refresh Health" button for manual checks
+- Broken links alert banner on Dashboard
 
-### 3. Brands (`/brands`)
-- Card grid of brands with logo, product count, network type
-- Add/Edit brand dialog with affiliate parameter template config
-- Template supports placeholders like `{affiliate_id}`, `{sub_id}`
+### 5. Click tracking enrichment
+Current `link_clicks` has `referrer`, `country`, `device`. Your prompt adds:
+- `ip_hash` (anonymized)
+- `user_agent`
+- Remove `country`/`device` (derive from user_agent if needed)
 
-### 4. Link Generator (`/links`)
-- Select product, auto-generates affiliate URL using brand's template
-- Copy-to-clipboard, QR code generation
-- Click tracking stats per link
+### 6. Short link redirect route
+- Route `/r/:code` that looks up the short code, increments click count, logs the click, and redirects
+- This needs an Edge Function since Lovable is client-side only
 
-### 5. Settings (`/settings`)
-- Affiliate ID configuration per network
-- Default UTM parameters
+### 7. QR code generation
+- Currently placeholder — need actual QR code rendering (e.g., `qrcode` npm package)
+- Show QR code in link generator modal
 
-## Implementation Steps
+### 8. Product availability status in UI
+- Badge showing in_stock/out_of_stock/unknown
+- Filter by availability on Products page
 
-1. **App shell & routing** — Sidebar layout with react-router routes for all pages
-2. **Supabase setup** — Tables, RLS policies, TypeScript types
-3. **Dashboard page** — Stats cards + Recharts charts with mock data initially
-4. **Brands management** — CRUD with affiliate URL template configuration
-5. **Products management** — Data table with search/filter, CRUD dialogs
-6. **Affiliate link engine** — URL generation logic that applies brand templates to product URLs
-7. **Link tracking** — Click counter, basic analytics per link
+### 9. Analytics improvements
+- Top products by clicks (partially there)
+- Clicks per day chart filtered by link (not just aggregate)
+- Broken links alert banner
 
-## Tech Decisions
-- **Recharts** for dashboard charts (already compatible with shadcn)
-- **Supabase** for database + auth (via Lovable Cloud)
-- **shadcn/ui data table** pattern for products/links lists
-- **Affiliate URL logic** lives client-side as a utility function, templating brand params onto product URLs
+### 10. Bulk product import (CSV)
+- Currently just a placeholder button
+- Need CSV parsing + insert logic
 
-## Affiliate URL Template System
-Each brand stores a template like:
-```
-{original_url}?tag={affiliate_id}&linkCode=ll1&ref_=as_li_ss_tl
-```
-The link generator replaces placeholders with the user's configured IDs.
+### 11. Authentication
+- Your prompt uses NextAuth; we'd use Supabase Auth (email + Google OAuth)
+- Needed before user credentials can be stored per-user
+
+---
+
+## Out of Scope (Aligned with Your Prompt)
+- Product ingestion from live APIs (Amazon PAAPI, Impact, CJ, Rakuten) — future feature
+- Docker/self-hosting setup (N/A for Lovable)
+- BullMQ/Redis queues (use Supabase pg_cron + Edge Functions instead)
+- Admin panel (deferred)
+
+---
+
+## Recommended Implementation Order
+
+1. **Set up Supabase database** — Create `networks`, `products`, `brands`, `user_credentials`, `affiliate_links`, `link_health`, `link_clicks` tables with proper RLS
+2. **Add auth** — Supabase Auth with email + Google
+3. **Update data models & UI** — Add missing fields (sku, availability, merchant_id), update Product/Brand pages
+4. **User credentials page** — Per-network credential management in Settings
+5. **Link health system** — Edge Function for HTTP checks, health status UI, broken link alerts
+6. **Short link redirect** — Edge Function for `/r/:code` with click tracking
+7. **QR code generation** — Real QR codes in link generator
+8. **CSV import** — Bulk product import from CSV files
+
+---
+
+## Technical Notes
+
+- **No Puppeteer**: Link health checks will use `fetch()` in an Edge Function (HEAD requests with redirect following). Sufficient for HTTP status + redirect validation.
+- **Encrypted credentials**: Use Supabase Vault or pgcrypto `pgp_sym_encrypt`/`pgp_sym_decrypt` for user API tokens.
+- **Short link redirects**: Requires an Edge Function since this is a client-side app — can't do server-side redirects from React Router.
+- **Impact network**: Add `'impact'` to the network_type enum alongside existing ones.
 
