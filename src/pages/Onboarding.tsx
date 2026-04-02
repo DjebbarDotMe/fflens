@@ -198,6 +198,7 @@ export default function Onboarding() {
           </Card>
         )}
       </div>
+      <p className="text-[10px] text-muted-foreground/50 text-center mt-4">v1.2.0</p>
     </div>
   );
 }
