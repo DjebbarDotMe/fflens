@@ -67,7 +67,11 @@ export default function AuthPage() {
         <CardHeader className="text-center">
           <CardTitle className="text-2xl font-bold">AffiliateHub</CardTitle>
           <CardDescription>
-            {isLogin ? "Sign in to your account" : "Create a new account"}
+            {isForgotPassword
+              ? "Enter your email to reset your password"
+              : isLogin
+                ? "Sign in to your account"
+                : "Create a new account"}
           </CardDescription>
         </CardHeader>
         <CardContent>
