@@ -15,6 +15,9 @@ export default function AuthPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
+  if (authLoading) return null;
+  if (user) return <Navigate to="/" replace />;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
