@@ -3,20 +3,32 @@ import { Package, Store, MousePointerClick, DollarSign, AlertTriangle } from "lu
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { mockProducts, mockAffiliateLinks, mockClicksOverTime, mockBrands } from "@/lib/mock-data";
+import { useProducts, useBrands, useAffiliateLinks } from "@/hooks/useSupabaseData";
 import { healthStatusColors, healthStatusLabels } from "@/lib/affiliate-utils";
-
-const stats = [
-  { label: "Total Products", value: mockProducts.length, icon: Package, change: "+12%" },
-  { label: "Active Brands", value: mockBrands.length, icon: Store, change: "+2" },
-  { label: "Total Clicks", value: mockAffiliateLinks.reduce((s, l) => s + l.clicks, 0).toLocaleString(), icon: MousePointerClick, change: "+18%" },
-  { label: "Est. Revenue", value: `$${mockAffiliateLinks.reduce((s, l) => s + l.revenue, 0).toLocaleString()}`, icon: DollarSign, change: "+24%" },
-];
-
-const topLinks = [...mockAffiliateLinks].sort((a, b) => b.clicks - a.clicks).slice(0, 5);
-const brokenLinks = mockAffiliateLinks.filter((l) => l.health_status === "broken");
+import { Skeleton } from "@/components/ui/skeleton";
+import { mockClicksOverTime } from "@/lib/mock-data";
 
 export default function Dashboard() {
+  const { data: products, isLoading: loadingProducts } = useProducts();
+  const { data: brands, isLoading: loadingBrands } = useBrands();
+  const { data: links, isLoading: loadingLinks } = useAffiliateLinks();
+
+  const totalProducts = products?.length || 0;
+  const totalBrands = brands?.length || 0;
+  const totalClicks = links?.reduce((s, l) => s + (l.click_count || 0), 0) || 0;
+  const totalRevenue = links?.reduce((s, l) => s + Number(l.revenue || 0), 0) || 0;
+  const brokenLinks = links?.filter((l) => l.health_status === "broken") || [];
+  const topLinks = [...(links || [])].sort((a, b) => (b.click_count || 0) - (a.click_count || 0)).slice(0, 5);
+
+  const stats = [
+    { label: "Total Products", value: totalProducts, icon: Package, change: "+12%" },
+    { label: "Active Brands", value: totalBrands, icon: Store, change: "+2" },
+    { label: "Total Clicks", value: totalClicks.toLocaleString(), icon: MousePointerClick, change: "+18%" },
+    { label: "Est. Revenue", value: `$${totalRevenue.toLocaleString()}`, icon: DollarSign, change: "+24%" },
+  ];
+
+  const isLoading = loadingProducts || loadingBrands || loadingLinks;
+
   return (
     <div className="space-y-6">
       <div>
@@ -30,7 +42,7 @@ export default function Dashboard() {
             <AlertTriangle className="h-5 w-5 text-destructive" />
             <div className="text-sm">
               <span className="font-medium">{brokenLinks.length} broken link{brokenLinks.length > 1 ? "s" : ""}</span>
-              <span className="text-muted-foreground"> — {brokenLinks.map((l) => l.product_name).join(", ")}</span>
+              <span className="text-muted-foreground"> — {brokenLinks.map((l) => l.products?.title).join(", ")}</span>
             </div>
           </CardContent>
         </Card>
@@ -44,8 +56,12 @@ export default function Dashboard() {
               <s.icon className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{s.value}</div>
-              <p className="text-xs text-muted-foreground">{s.change} from last month</p>
+              {isLoading ? <Skeleton className="h-8 w-20" /> : (
+                <>
+                  <div className="text-2xl font-bold">{s.value}</div>
+                  <p className="text-xs text-muted-foreground">{s.change} from last month</p>
+                </>
+              )}
             </CardContent>
           </Card>
         ))}
@@ -71,41 +87,43 @@ export default function Dashboard() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Top Performing Links</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Product</TableHead>
-                <TableHead>Short Code</TableHead>
-                <TableHead className="text-right">Clicks</TableHead>
-                <TableHead className="text-right">Conversions</TableHead>
-                <TableHead className="text-right">Revenue</TableHead>
-                <TableHead>Health</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {topLinks.map((link) => (
-                <TableRow key={link.id}>
-                  <TableCell className="font-medium">{link.product_name}</TableCell>
-                  <TableCell><Badge variant="secondary">{link.short_code}</Badge></TableCell>
-                  <TableCell className="text-right">{link.clicks.toLocaleString()}</TableCell>
-                  <TableCell className="text-right">{link.conversions}</TableCell>
-                  <TableCell className="text-right">${link.revenue.toLocaleString()}</TableCell>
-                  <TableCell>
-                    <Badge className={healthStatusColors[link.health_status]}>
-                      {healthStatusLabels[link.health_status]}
-                    </Badge>
-                  </TableCell>
+      {topLinks.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Top Performing Links</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Product</TableHead>
+                  <TableHead>Short Code</TableHead>
+                  <TableHead className="text-right">Clicks</TableHead>
+                  <TableHead className="text-right">Conversions</TableHead>
+                  <TableHead className="text-right">Revenue</TableHead>
+                  <TableHead>Health</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+              </TableHeader>
+              <TableBody>
+                {topLinks.map((link) => (
+                  <TableRow key={link.id}>
+                    <TableCell className="font-medium">{link.products?.title}</TableCell>
+                    <TableCell><Badge variant="secondary">{link.short_code}</Badge></TableCell>
+                    <TableCell className="text-right">{(link.click_count || 0).toLocaleString()}</TableCell>
+                    <TableCell className="text-right">{link.conversions || 0}</TableCell>
+                    <TableCell className="text-right">${Number(link.revenue || 0).toLocaleString()}</TableCell>
+                    <TableCell>
+                      <Badge className={healthStatusColors[link.health_status || "unknown"]}>
+                        {healthStatusLabels[link.health_status || "unknown"]}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

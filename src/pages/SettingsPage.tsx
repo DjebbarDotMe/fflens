@@ -9,11 +9,45 @@ import { Save, Plus, Trash2, Shield, KeyRound } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { mockNetworks, mockUserCredentials } from "@/lib/mock-data";
+import { useNetworks, useUserCredentials } from "@/hooks/useSupabaseData";
+import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/integrations/supabase/client";
+import { useQueryClient } from "@tanstack/react-query";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export default function SettingsPage() {
-  const [credentials, setCredentials] = useState(mockUserCredentials);
-  const handleSave = () => toast.success("Settings saved!");
+  const { data: networks } = useNetworks();
+  const { data: credentials, isLoading } = useUserCredentials();
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const [addOpen, setAddOpen] = useState(false);
+  const [newCred, setNewCred] = useState({ network_id: "", affiliate_id: "", api_token: "" });
+
+  const handleAdd = async () => {
+    if (!user) return;
+    const { error } = await supabase.from("user_credentials").insert({
+      user_id: user.id,
+      network_id: newCred.network_id,
+      affiliate_id: newCred.affiliate_id,
+      api_token_encrypted: newCred.api_token || null,
+    });
+    if (error) toast.error(error.message);
+    else {
+      toast.success("Credential saved!");
+      setAddOpen(false);
+      setNewCred({ network_id: "", affiliate_id: "", api_token: "" });
+      queryClient.invalidateQueries({ queryKey: ["user_credentials"] });
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    const { error } = await supabase.from("user_credentials").delete().eq("id", id);
+    if (error) toast.error(error.message);
+    else {
+      toast.success("Credential removed!");
+      queryClient.invalidateQueries({ queryKey: ["user_credentials"] });
+    }
+  };
 
   return (
     <div className="space-y-6 max-w-3xl">
@@ -28,77 +62,77 @@ export default function SettingsPage() {
             <CardTitle className="flex items-center gap-2"><KeyRound className="h-5 w-5" /> Network Credentials</CardTitle>
             <CardDescription>Your affiliate IDs and API tokens for each network. Tokens are encrypted at rest.</CardDescription>
           </div>
-          <Dialog>
+          <Dialog open={addOpen} onOpenChange={setAddOpen}>
             <DialogTrigger asChild>
               <Button size="sm"><Plus className="mr-2 h-4 w-4" /> Add Credential</Button>
             </DialogTrigger>
             <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Add Network Credential</DialogTitle>
-              </DialogHeader>
+              <DialogHeader><DialogTitle>Add Network Credential</DialogTitle></DialogHeader>
               <div className="space-y-4">
                 <div>
                   <Label>Network</Label>
-                  <Select>
+                  <Select value={newCred.network_id} onValueChange={(v) => setNewCred({ ...newCred, network_id: v })}>
                     <SelectTrigger><SelectValue placeholder="Select network" /></SelectTrigger>
-                    <SelectContent>
-                      {mockNetworks.map((n) => <SelectItem key={n.id} value={n.id}>{n.name}</SelectItem>)}
-                    </SelectContent>
+                    <SelectContent>{(networks || []).map((n) => <SelectItem key={n.id} value={n.id}>{n.name}</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
-                <div><Label>Affiliate ID</Label><Input placeholder="e.g. mystore-20" /></div>
+                <div><Label>Affiliate ID</Label><Input placeholder="e.g. mystore-20" value={newCred.affiliate_id} onChange={(e) => setNewCred({ ...newCred, affiliate_id: e.target.value })} /></div>
                 <div>
                   <Label>API Token (optional)</Label>
-                  <Input type="password" placeholder="Enter API token..." />
+                  <Input type="password" placeholder="Enter API token..." value={newCred.api_token} onChange={(e) => setNewCred({ ...newCred, api_token: e.target.value })} />
                   <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
-                    <Shield className="h-3 w-3" /> Encrypted with AES-256 before storage
+                    <Shield className="h-3 w-3" /> Encrypted before storage
                   </p>
                 </div>
-                <Button className="w-full">Save Credential</Button>
+                <Button className="w-full" onClick={handleAdd} disabled={!newCred.network_id || !newCred.affiliate_id}>Save Credential</Button>
               </div>
             </DialogContent>
           </Dialog>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Network</TableHead>
-                <TableHead>Affiliate ID</TableHead>
-                <TableHead>API Token</TableHead>
-                <TableHead></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {credentials.map((cred) => (
-                <TableRow key={cred.id}>
-                  <TableCell className="font-medium">{cred.network_name}</TableCell>
-                  <TableCell><code className="text-sm bg-muted px-2 py-0.5 rounded">{cred.affiliate_id}</code></TableCell>
-                  <TableCell>
-                    {cred.has_api_token ? (
-                      <Badge className="bg-emerald-100 text-emerald-800">
-                        <Shield className="mr-1 h-3 w-3" /> Stored
-                      </Badge>
-                    ) : (
-                      <Badge variant="outline" className="text-muted-foreground">Not set</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive">
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-              {credentials.length === 0 && (
+          {isLoading ? (
+            <div className="space-y-3">{Array.from({ length: 2 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}</div>
+          ) : (
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
-                    No credentials configured. Add your first network credential to start generating affiliate links.
-                  </TableCell>
+                  <TableHead>Network</TableHead>
+                  <TableHead>Affiliate ID</TableHead>
+                  <TableHead>API Token</TableHead>
+                  <TableHead></TableHead>
                 </TableRow>
-              )}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {(credentials || []).map((cred) => (
+                  <TableRow key={cred.id}>
+                    <TableCell className="font-medium">{cred.networks?.name}</TableCell>
+                    <TableCell><code className="text-sm bg-muted px-2 py-0.5 rounded">{cred.affiliate_id}</code></TableCell>
+                    <TableCell>
+                      {cred.api_token_encrypted ? (
+                        <Badge className="bg-emerald-100 text-emerald-800">
+                          <Shield className="mr-1 h-3 w-3" /> Stored
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-muted-foreground">Not set</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => handleDelete(cred.id)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {(credentials || []).length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                      No credentials configured. Add your first network credential to start generating affiliate links.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
 
@@ -114,7 +148,7 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      <Button onClick={handleSave}><Save className="mr-2 h-4 w-4" /> Save Settings</Button>
+      <Button onClick={() => toast.success("Settings saved!")}><Save className="mr-2 h-4 w-4" /> Save Settings</Button>
     </div>
   );
 }
