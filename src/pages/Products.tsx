@@ -10,19 +10,22 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Plus, Search, Upload } from "lucide-react";
 import { mockProducts, mockBrands } from "@/lib/mock-data";
+import { availabilityLabels, availabilityColors } from "@/lib/affiliate-utils";
 
 export default function Products() {
   const [search, setSearch] = useState("");
   const [brandFilter, setBrandFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
+  const [availabilityFilter, setAvailabilityFilter] = useState("all");
 
   const categories = [...new Set(mockProducts.map((p) => p.category))];
 
   const filtered = mockProducts.filter((p) => {
-    const matchesSearch = p.name.toLowerCase().includes(search.toLowerCase());
+    const matchesSearch = p.name.toLowerCase().includes(search.toLowerCase()) || p.sku.toLowerCase().includes(search.toLowerCase());
     const matchesBrand = brandFilter === "all" || p.brand_id === brandFilter;
     const matchesCategory = categoryFilter === "all" || p.category === categoryFilter;
-    return matchesSearch && matchesBrand && matchesCategory;
+    const matchesAvailability = availabilityFilter === "all" || p.availability_status === availabilityFilter;
+    return matchesSearch && matchesBrand && matchesCategory && matchesAvailability;
   });
 
   return (
@@ -46,6 +49,7 @@ export default function Products() {
               </DialogHeader>
               <div className="space-y-4">
                 <div><Label>Product Name</Label><Input placeholder="e.g. Sony WH-1000XM5" /></div>
+                <div><Label>SKU</Label><Input placeholder="e.g. B09XS7JWHH" /></div>
                 <div><Label>Brand</Label>
                   <Select><SelectTrigger><SelectValue placeholder="Select brand" /></SelectTrigger>
                     <SelectContent>{mockBrands.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectContent>
@@ -55,6 +59,15 @@ export default function Products() {
                 <div className="grid grid-cols-2 gap-4">
                   <div><Label>Price</Label><Input type="number" placeholder="0.00" /></div>
                   <div><Label>Category</Label><Input placeholder="Electronics" /></div>
+                </div>
+                <div><Label>Merchant ID</Label><Input placeholder="e.g. amz-sony" /></div>
+                <div><Label>Availability</Label>
+                  <Select>
+                    <SelectTrigger><SelectValue placeholder="Select status" /></SelectTrigger>
+                    <SelectContent>
+                      {Object.entries(availabilityLabels).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div><Label>Description</Label><Textarea placeholder="Product description..." /></div>
                 <Button className="w-full">Add Product</Button>
@@ -69,7 +82,7 @@ export default function Products() {
           <div className="flex flex-col sm:flex-row gap-4">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Search products..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
+              <Input placeholder="Search by name or SKU..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
             </div>
             <Select value={brandFilter} onValueChange={setBrandFilter}>
               <SelectTrigger className="w-[160px]"><SelectValue placeholder="All Brands" /></SelectTrigger>
@@ -85,6 +98,13 @@ export default function Products() {
                 {categories.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
               </SelectContent>
             </Select>
+            <Select value={availabilityFilter} onValueChange={setAvailabilityFilter}>
+              <SelectTrigger className="w-[160px]"><SelectValue placeholder="Availability" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All</SelectItem>
+                {Object.entries(availabilityLabels).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </div>
         </CardHeader>
         <CardContent>
@@ -92,9 +112,11 @@ export default function Products() {
             <TableHeader>
               <TableRow>
                 <TableHead>Product</TableHead>
+                <TableHead>SKU</TableHead>
                 <TableHead>Brand</TableHead>
                 <TableHead>Category</TableHead>
                 <TableHead className="text-right">Price</TableHead>
+                <TableHead>Availability</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Affiliate Link</TableHead>
               </TableRow>
@@ -103,9 +125,15 @@ export default function Products() {
               {filtered.map((p) => (
                 <TableRow key={p.id}>
                   <TableCell className="font-medium">{p.name}</TableCell>
+                  <TableCell><code className="text-xs bg-muted px-1.5 py-0.5 rounded">{p.sku}</code></TableCell>
                   <TableCell>{p.brand_name}</TableCell>
                   <TableCell><Badge variant="outline">{p.category}</Badge></TableCell>
                   <TableCell className="text-right">${p.price.toFixed(2)}</TableCell>
+                  <TableCell>
+                    <Badge className={availabilityColors[p.availability_status]}>
+                      {availabilityLabels[p.availability_status]}
+                    </Badge>
+                  </TableCell>
                   <TableCell>
                     <Badge variant={p.is_active ? "default" : "secondary"}>
                       {p.is_active ? "Active" : "Inactive"}
