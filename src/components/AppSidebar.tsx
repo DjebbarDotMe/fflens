@@ -70,7 +70,7 @@ export function AppSidebar() {
           {!collapsed && "Sign Out"}
         </Button>
         {!collapsed && (
-          <p className="text-[10px] text-muted-foreground/50 text-center mt-1">v1.1.0</p>
+          <p className="text-[10px] text-muted-foreground/50 text-center mt-1">v1.2.0</p>
         )}
       </SidebarFooter>
     </Sidebar>

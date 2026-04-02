@@ -5,10 +5,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Search } from "lucide-react";
+import { Plus, Search, Pencil, Trash2 } from "lucide-react";
 import { useProducts, useBrands } from "@/hooks/useSupabaseData";
 import { availabilityLabels, availabilityColors } from "@/lib/affiliate-utils";
 import { CsvImportDialog } from "@/components/CsvImportDialog";
@@ -17,13 +17,22 @@ import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { Skeleton } from "@/components/ui/skeleton";
 
+type ProductForm = {
+  title: string; sku: string; brand_id: string; price: string; category: string;
+  description: string; merchant_id: string; availability_status: string; affiliate_url_template: string;
+};
+
+const emptyProduct: ProductForm = { title: "", sku: "", brand_id: "", price: "", category: "", description: "", merchant_id: "", availability_status: "unknown", affiliate_url_template: "" };
+
 export default function Products() {
   const [search, setSearch] = useState("");
   const [brandFilter, setBrandFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [availabilityFilter, setAvailabilityFilter] = useState("all");
   const [addOpen, setAddOpen] = useState(false);
-  const [newProduct, setNewProduct] = useState({ title: "", sku: "", brand_id: "", price: "", category: "", description: "", merchant_id: "", availability_status: "unknown", affiliate_url_template: "" });
+  const [newProduct, setNewProduct] = useState<ProductForm>({ ...emptyProduct });
+  const [editingProduct, setEditingProduct] = useState<(ProductForm & { id: string }) | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   const { data: products, isLoading: loadingProducts } = useProducts();
   const { data: brands, isLoading: loadingBrands } = useBrands();
@@ -42,26 +51,74 @@ export default function Products() {
   const handleAddProduct = async () => {
     const brand = brands?.find((b) => b.id === newProduct.brand_id);
     const { error } = await supabase.from("products").insert({
-      title: newProduct.title,
-      sku: newProduct.sku,
-      brand_id: newProduct.brand_id || null,
-      network_id: brand?.network_id || null,
-      price: parseFloat(newProduct.price) || null,
-      category: newProduct.category || null,
-      description: newProduct.description || null,
+      title: newProduct.title, sku: newProduct.sku, brand_id: newProduct.brand_id || null,
+      network_id: brand?.network_id || null, price: parseFloat(newProduct.price) || null,
+      category: newProduct.category || null, description: newProduct.description || null,
       merchant_id: newProduct.merchant_id || null,
       availability_status: (newProduct.availability_status as "in_stock" | "out_of_stock" | "unknown") || "unknown",
       affiliate_url_template: newProduct.affiliate_url_template || null,
     });
-    if (error) {
-      toast.error(error.message);
-    } else {
+    if (error) toast.error(error.message);
+    else {
       toast.success("Product added!");
       setAddOpen(false);
-      setNewProduct({ title: "", sku: "", brand_id: "", price: "", category: "", description: "", merchant_id: "", availability_status: "unknown", affiliate_url_template: "" });
+      setNewProduct({ ...emptyProduct });
       queryClient.invalidateQueries({ queryKey: ["products"] });
     }
   };
+
+  const handleEditProduct = async () => {
+    if (!editingProduct) return;
+    const brand = brands?.find((b) => b.id === editingProduct.brand_id);
+    const { error } = await supabase.from("products").update({
+      title: editingProduct.title, sku: editingProduct.sku, brand_id: editingProduct.brand_id || null,
+      network_id: brand?.network_id || null, price: parseFloat(editingProduct.price) || null,
+      category: editingProduct.category || null, description: editingProduct.description || null,
+      merchant_id: editingProduct.merchant_id || null,
+      availability_status: (editingProduct.availability_status as "in_stock" | "out_of_stock" | "unknown") || "unknown",
+      affiliate_url_template: editingProduct.affiliate_url_template || null,
+    }).eq("id", editingProduct.id);
+    if (error) toast.error(error.message);
+    else {
+      toast.success("Product updated!");
+      setEditingProduct(null);
+      queryClient.invalidateQueries({ queryKey: ["products"] });
+    }
+  };
+
+  const handleDeleteProduct = async (id: string) => {
+    const { error } = await supabase.from("products").delete().eq("id", id);
+    if (error) toast.error(error.message);
+    else {
+      toast.success("Product deleted!");
+      setDeleteConfirmId(null);
+      queryClient.invalidateQueries({ queryKey: ["products"] });
+    }
+  };
+
+  const ProductFormFields = ({ product, onChange }: { product: ProductForm; onChange: (p: ProductForm) => void }) => (
+    <div className="space-y-4">
+      <div><Label>Product Name</Label><Input placeholder="e.g. Sony WH-1000XM5" value={product.title} onChange={(e) => onChange({ ...product, title: e.target.value })} /></div>
+      <div><Label>SKU</Label><Input placeholder="e.g. B09XS7JWHH" value={product.sku} onChange={(e) => onChange({ ...product, sku: e.target.value })} /></div>
+      <div><Label>Brand</Label>
+        <Select value={product.brand_id} onValueChange={(v) => onChange({ ...product, brand_id: v })}>
+          <SelectTrigger><SelectValue placeholder="Select brand" /></SelectTrigger>
+          <SelectContent>{(brands || []).map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectContent>
+        </Select>
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <div><Label>Price</Label><Input type="number" placeholder="0.00" value={product.price} onChange={(e) => onChange({ ...product, price: e.target.value })} /></div>
+        <div><Label>Category</Label><Input placeholder="Electronics" value={product.category} onChange={(e) => onChange({ ...product, category: e.target.value })} /></div>
+      </div>
+      <div><Label>Availability</Label>
+        <Select value={product.availability_status} onValueChange={(v) => onChange({ ...product, availability_status: v })}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>{Object.entries(availabilityLabels).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}</SelectContent>
+        </Select>
+      </div>
+      <div><Label>Description</Label><Textarea placeholder="Product description..." value={product.description} onChange={(e) => onChange({ ...product, description: e.target.value })} /></div>
+    </div>
+  );
 
   return (
     <div className="space-y-6">
@@ -81,28 +138,11 @@ export default function Products() {
             </DialogTrigger>
             <DialogContent>
               <DialogHeader><DialogTitle>Add New Product</DialogTitle></DialogHeader>
-              <div className="space-y-4">
-                <div><Label>Product Name</Label><Input placeholder="e.g. Sony WH-1000XM5" value={newProduct.title} onChange={(e) => setNewProduct({ ...newProduct, title: e.target.value })} /></div>
-                <div><Label>SKU</Label><Input placeholder="e.g. B09XS7JWHH" value={newProduct.sku} onChange={(e) => setNewProduct({ ...newProduct, sku: e.target.value })} /></div>
-                <div><Label>Brand</Label>
-                  <Select value={newProduct.brand_id} onValueChange={(v) => setNewProduct({ ...newProduct, brand_id: v })}>
-                    <SelectTrigger><SelectValue placeholder="Select brand" /></SelectTrigger>
-                    <SelectContent>{(brands || []).map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectContent>
-                  </Select>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div><Label>Price</Label><Input type="number" placeholder="0.00" value={newProduct.price} onChange={(e) => setNewProduct({ ...newProduct, price: e.target.value })} /></div>
-                  <div><Label>Category</Label><Input placeholder="Electronics" value={newProduct.category} onChange={(e) => setNewProduct({ ...newProduct, category: e.target.value })} /></div>
-                </div>
-                <div><Label>Availability</Label>
-                  <Select value={newProduct.availability_status} onValueChange={(v) => setNewProduct({ ...newProduct, availability_status: v })}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>{Object.entries(availabilityLabels).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}</SelectContent>
-                  </Select>
-                </div>
-                <div><Label>Description</Label><Textarea placeholder="Product description..." value={newProduct.description} onChange={(e) => setNewProduct({ ...newProduct, description: e.target.value })} /></div>
-                <Button className="w-full" onClick={handleAddProduct} disabled={!newProduct.title || !newProduct.sku}>Add Product</Button>
-              </div>
+              <ProductFormFields product={newProduct} onChange={setNewProduct} />
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setAddOpen(false)}>Cancel</Button>
+                <Button onClick={handleAddProduct} disabled={!newProduct.title || !newProduct.sku}>Add Product</Button>
+              </DialogFooter>
             </DialogContent>
           </Dialog>
         </div>
@@ -157,6 +197,7 @@ export default function Products() {
                   <TableHead className="text-right">Price</TableHead>
                   <TableHead>Availability</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -177,6 +218,21 @@ export default function Products() {
                         {p.status === "active" ? "Active" : "Inactive"}
                       </Badge>
                     </TableCell>
+                    <TableCell>
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="icon" onClick={() => setEditingProduct({
+                          id: p.id, title: p.title, sku: p.sku, brand_id: p.brand_id || "",
+                          price: p.price?.toString() || "", category: p.category || "",
+                          description: p.description || "", merchant_id: p.merchant_id || "",
+                          availability_status: p.availability_status, affiliate_url_template: p.affiliate_url_template || "",
+                        })}>
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => setDeleteConfirmId(p.id)}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -184,6 +240,32 @@ export default function Products() {
           )}
         </CardContent>
       </Card>
+
+      {/* Edit Dialog */}
+      <Dialog open={!!editingProduct} onOpenChange={(open) => !open && setEditingProduct(null)}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Edit Product</DialogTitle></DialogHeader>
+          {editingProduct && (
+            <ProductFormFields product={editingProduct} onChange={(p) => setEditingProduct({ ...editingProduct, ...p })} />
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingProduct(null)}>Cancel</Button>
+            <Button onClick={handleEditProduct}>Save Changes</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation */}
+      <Dialog open={!!deleteConfirmId} onOpenChange={(open) => !open && setDeleteConfirmId(null)}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Delete Product</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">Are you sure? This will permanently remove this product and any associated affiliate links.</p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteConfirmId(null)}>Cancel</Button>
+            <Button variant="destructive" onClick={() => deleteConfirmId && handleDeleteProduct(deleteConfirmId)}>Delete</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

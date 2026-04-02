@@ -7,8 +7,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
-import { Copy, Link2, ExternalLink, RefreshCw, CheckCircle2, XCircle, HelpCircle, Plus, Pencil, Trash2 } from "lucide-react";
-import { useProducts, useAffiliateLinks, useUserCredentials } from "@/hooks/useSupabaseData";
+import { Copy, Link2, ExternalLink, RefreshCw, CheckCircle2, XCircle, HelpCircle, Plus, Pencil, Trash2, Loader2 } from "lucide-react";
+import { useProducts, useAffiliateLinks, useUserCredentials, useChannels, useProfile } from "@/hooks/useSupabaseData";
 import { generateAffiliateUrl, generateShortCode, healthStatusLabels, healthStatusColors } from "@/lib/affiliate-utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -16,23 +16,38 @@ import { toast } from "sonner";
 import { QRCodeSVG } from "qrcode.react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export default function Links() {
   const [selectedProduct, setSelectedProduct] = useState("");
+  const [selectedChannelGen, setSelectedChannelGen] = useState("");
   const [manualUrl, setManualUrl] = useState("");
   const [manualShortCode, setManualShortCode] = useState("");
   const [manualProductId, setManualProductId] = useState("");
+  const [manualChannelId, setManualChannelId] = useState("");
   const [generatedUrl, setGeneratedUrl] = useState("");
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [editingLink, setEditingLink] = useState<{ id: string; affiliate_url: string; short_code: string } | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
   const { data: products } = useProducts();
   const { data: links, isLoading } = useAffiliateLinks();
   const { data: credentials } = useUserCredentials();
+  const { data: channels } = useChannels();
+  const { data: profile } = useProfile(user?.id);
+
+  const appendUtmParams = (url: string) => {
+    if (!profile) return url;
+    const params = new URLSearchParams();
+    if (profile.utm_source) params.set("utm_source", profile.utm_source);
+    if (profile.utm_medium) params.set("utm_medium", profile.utm_medium);
+    if (profile.utm_campaign) params.set("utm_campaign", profile.utm_campaign);
+    const utmStr = params.toString();
+    if (!utmStr) return url;
+    return url + (url.includes("?") ? "&" : "?") + utmStr;
+  };
 
   const handleGenerate = async () => {
     const product = products?.find((p) => p.id === selectedProduct);
@@ -45,10 +60,11 @@ export default function Links() {
     const template = product.affiliate_url_template || product.networks?.slug
       ? `{original_url}?tag={affiliate_id}` : "{original_url}?aff={affiliate_id}";
 
-    const url = generateAffiliateUrl(template, `https://example.com/product/${product.sku}`, {
+    let url = generateAffiliateUrl(template, `https://example.com/product/${product.sku}`, {
       affiliate_id: affiliateId,
       sub_id: "campaign-1",
     });
+    url = appendUtmParams(url);
     setGeneratedUrl(url);
 
     const shortCode = generateShortCode(product.title);
@@ -57,6 +73,7 @@ export default function Links() {
       product_id: product.id,
       affiliate_url: url,
       short_code: `${shortCode}-${Date.now().toString(36)}`,
+      channel_id: selectedChannelGen || null,
     });
     if (error) {
       if (!error.message.includes("duplicate")) toast.error(error.message);
@@ -77,6 +94,7 @@ export default function Links() {
       product_id: manualProductId,
       affiliate_url: manualUrl.trim(),
       short_code: shortCode,
+      channel_id: manualChannelId || null,
     });
     if (error) {
       toast.error(error.message);
@@ -85,6 +103,7 @@ export default function Links() {
       setManualUrl("");
       setManualShortCode("");
       setManualProductId("");
+      setManualChannelId("");
       setAddDialogOpen(false);
       queryClient.invalidateQueries({ queryKey: ["affiliate_links"] });
     }
@@ -94,14 +113,10 @@ export default function Links() {
     if (!editingLink) return;
     const { error } = await supabase
       .from("affiliate_links")
-      .update({
-        affiliate_url: editingLink.affiliate_url,
-        short_code: editingLink.short_code,
-      })
+      .update({ affiliate_url: editingLink.affiliate_url, short_code: editingLink.short_code })
       .eq("id", editingLink.id);
-    if (error) {
-      toast.error(error.message);
-    } else {
+    if (error) toast.error(error.message);
+    else {
       toast.success("Link updated!");
       setEditingLink(null);
       queryClient.invalidateQueries({ queryKey: ["affiliate_links"] });
@@ -110,12 +125,25 @@ export default function Links() {
 
   const handleDelete = async (id: string) => {
     const { error } = await supabase.from("affiliate_links").delete().eq("id", id);
-    if (error) {
-      toast.error(error.message);
-    } else {
+    if (error) toast.error(error.message);
+    else {
       toast.success("Link deleted!");
       setDeleteConfirmId(null);
       queryClient.invalidateQueries({ queryKey: ["affiliate_links"] });
+    }
+  };
+
+  const handleRefreshHealth = async () => {
+    setRefreshing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("check-link-health");
+      if (error) throw error;
+      toast.success(`Checked ${data?.checked || 0} links`);
+      queryClient.invalidateQueries({ queryKey: ["affiliate_links"] });
+    } catch (err: any) {
+      toast.error(err.message || "Failed to check link health");
+    } finally {
+      setRefreshing(false);
     }
   };
 
@@ -131,6 +159,21 @@ export default function Links() {
     if (status === "broken") return <XCircle className="h-4 w-4 text-red-600" />;
     return <HelpCircle className="h-4 w-4 text-muted-foreground" />;
   };
+
+  const ChannelSelect = ({ value, onChange }: { value: string; onChange: (v: string) => void }) => (
+    <div>
+      <Label>Channel (optional)</Label>
+      <Select value={value} onValueChange={onChange}>
+        <SelectTrigger><SelectValue placeholder="No channel" /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="none">No channel</SelectItem>
+          {(channels || []).map((ch) => (
+            <SelectItem key={ch.id} value={ch.id}>{ch.name}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
 
   return (
     <div className="space-y-6">
@@ -166,6 +209,7 @@ export default function Links() {
                 />
                 <p className="text-xs text-muted-foreground mt-1">Paste your full affiliate link from any platform</p>
               </div>
+              <ChannelSelect value={manualChannelId} onChange={(v) => setManualChannelId(v === "none" ? "" : v)} />
               <div>
                 <Label>Short Code (optional)</Label>
                 <Input
@@ -209,6 +253,7 @@ export default function Links() {
                 </SelectContent>
               </Select>
             </div>
+            <ChannelSelect value={selectedChannelGen} onChange={(v) => setSelectedChannelGen(v === "none" ? "" : v)} />
             <Button onClick={handleGenerate} disabled={!selectedProduct}>Generate Affiliate Link</Button>
             {generatedUrl && (
               <div className="space-y-4">
@@ -236,7 +281,10 @@ export default function Links() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Your Links</CardTitle>
-          <Button variant="outline" size="sm"><RefreshCw className="mr-2 h-3 w-3" /> Refresh Health</Button>
+          <Button variant="outline" size="sm" onClick={handleRefreshHealth} disabled={refreshing}>
+            {refreshing ? <Loader2 className="mr-2 h-3 w-3 animate-spin" /> : <RefreshCw className="mr-2 h-3 w-3" />}
+            Refresh Health
+          </Button>
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -251,6 +299,7 @@ export default function Links() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Product</TableHead>
+                  <TableHead>Channel</TableHead>
                   <TableHead>Short Code</TableHead>
                   <TableHead>URL</TableHead>
                   <TableHead className="text-right">Clicks</TableHead>
@@ -264,6 +313,13 @@ export default function Links() {
                 {(links || []).map((link) => (
                   <TableRow key={link.id}>
                     <TableCell className="font-medium">{link.products?.title}</TableCell>
+                    <TableCell>
+                      {(link as any).channels?.name ? (
+                        <Badge variant="outline">{(link as any).channels.name}</Badge>
+                      ) : (
+                        <span className="text-muted-foreground text-xs">—</span>
+                      )}
+                    </TableCell>
                     <TableCell><Badge variant="secondary">{link.short_code}</Badge></TableCell>
                     <TableCell className="max-w-[200px] truncate text-xs font-mono">{link.affiliate_url}</TableCell>
                     <TableCell className="text-right">{(link.click_count || 0).toLocaleString()}</TableCell>
@@ -311,17 +367,11 @@ export default function Links() {
             <div className="space-y-4">
               <div>
                 <Label>Affiliate URL</Label>
-                <Input
-                  value={editingLink.affiliate_url}
-                  onChange={(e) => setEditingLink({ ...editingLink, affiliate_url: e.target.value })}
-                />
+                <Input value={editingLink.affiliate_url} onChange={(e) => setEditingLink({ ...editingLink, affiliate_url: e.target.value })} />
               </div>
               <div>
                 <Label>Short Code</Label>
-                <Input
-                  value={editingLink.short_code}
-                  onChange={(e) => setEditingLink({ ...editingLink, short_code: e.target.value })}
-                />
+                <Input value={editingLink.short_code} onChange={(e) => setEditingLink({ ...editingLink, short_code: e.target.value })} />
               </div>
             </div>
           )}

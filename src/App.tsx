@@ -3,6 +3,7 @@ import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { AppLayout } from "@/components/AppLayout";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
+import { useProfile } from "@/hooks/useSupabaseData";
 import Index from "./pages/Index";
 import Products from "./pages/Products";
 import Brands from "./pages/Brands";
@@ -10,14 +11,16 @@ import Links from "./pages/Links";
 import SettingsPage from "./pages/SettingsPage";
 import AuthPage from "./pages/AuthPage";
 import ResetPassword from "./pages/ResetPassword";
+import Onboarding from "./pages/Onboarding";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
 function ProtectedRoutes() {
   const { user, loading } = useAuth();
+  const { data: profile, isLoading: profileLoading } = useProfile(user?.id);
 
-  if (loading) {
+  if (loading || profileLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
@@ -26,6 +29,10 @@ function ProtectedRoutes() {
   }
 
   if (!user) return <Navigate to="/auth" replace />;
+
+  if (profile && !profile.has_completed_onboarding) {
+    return <Navigate to="/onboarding" replace />;
+  }
 
   return (
     <AppLayout>
@@ -49,6 +56,7 @@ const App = () => (
         <Routes>
           <Route path="/auth" element={<AuthPage />} />
           <Route path="/reset-password" element={<ResetPassword />} />
+          <Route path="/onboarding" element={<Onboarding />} />
           <Route path="/*" element={<ProtectedRoutes />} />
         </Routes>
       </BrowserRouter>
