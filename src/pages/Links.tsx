@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { Copy, Link2, ExternalLink, RefreshCw, CheckCircle2, XCircle, HelpCircle } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { Copy, Link2, ExternalLink, RefreshCw, CheckCircle2, XCircle, HelpCircle, Plus, Pencil, Trash2 } from "lucide-react";
 import { useProducts, useAffiliateLinks, useUserCredentials } from "@/hooks/useSupabaseData";
 import { generateAffiliateUrl, generateShortCode, healthStatusLabels, healthStatusColors } from "@/lib/affiliate-utils";
 import { supabase } from "@/integrations/supabase/client";
@@ -15,10 +16,17 @@ import { toast } from "sonner";
 import { QRCodeSVG } from "qrcode.react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export default function Links() {
   const [selectedProduct, setSelectedProduct] = useState("");
+  const [manualUrl, setManualUrl] = useState("");
+  const [manualShortCode, setManualShortCode] = useState("");
+  const [manualProductId, setManualProductId] = useState("");
   const [generatedUrl, setGeneratedUrl] = useState("");
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [editingLink, setEditingLink] = useState<{ id: string; affiliate_url: string; short_code: string } | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
@@ -53,6 +61,60 @@ export default function Links() {
     if (error) {
       if (!error.message.includes("duplicate")) toast.error(error.message);
     } else {
+      toast.success("Affiliate link created!");
+      queryClient.invalidateQueries({ queryKey: ["affiliate_links"] });
+    }
+  };
+
+  const handleManualAdd = async () => {
+    if (!user || !manualUrl.trim() || !manualProductId) return;
+
+    const product = products?.find((p) => p.id === manualProductId);
+    const shortCode = manualShortCode.trim() || generateShortCode(product?.title || "link") + `-${Date.now().toString(36)}`;
+
+    const { error } = await supabase.from("affiliate_links").insert({
+      user_id: user.id,
+      product_id: manualProductId,
+      affiliate_url: manualUrl.trim(),
+      short_code: shortCode,
+    });
+    if (error) {
+      toast.error(error.message);
+    } else {
+      toast.success("Link added successfully!");
+      setManualUrl("");
+      setManualShortCode("");
+      setManualProductId("");
+      setAddDialogOpen(false);
+      queryClient.invalidateQueries({ queryKey: ["affiliate_links"] });
+    }
+  };
+
+  const handleEdit = async () => {
+    if (!editingLink) return;
+    const { error } = await supabase
+      .from("affiliate_links")
+      .update({
+        affiliate_url: editingLink.affiliate_url,
+        short_code: editingLink.short_code,
+      })
+      .eq("id", editingLink.id);
+    if (error) {
+      toast.error(error.message);
+    } else {
+      toast.success("Link updated!");
+      setEditingLink(null);
+      queryClient.invalidateQueries({ queryKey: ["affiliate_links"] });
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    const { error } = await supabase.from("affiliate_links").delete().eq("id", id);
+    if (error) {
+      toast.error(error.message);
+    } else {
+      toast.success("Link deleted!");
+      setDeleteConfirmId(null);
       queryClient.invalidateQueries({ queryKey: ["affiliate_links"] });
     }
   };
@@ -72,9 +134,53 @@ export default function Links() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Affiliate Links</h1>
-        <p className="text-muted-foreground">Generate and manage affiliate links for your products.</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Affiliate Links</h1>
+          <p className="text-muted-foreground">Generate, add, and manage your affiliate links.</p>
+        </div>
+        <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
+          <DialogTrigger asChild>
+            <Button><Plus className="mr-2 h-4 w-4" /> Add Link</Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader><DialogTitle>Add Affiliate Link</DialogTitle></DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label>Product</Label>
+                <Select value={manualProductId} onValueChange={setManualProductId}>
+                  <SelectTrigger><SelectValue placeholder="Select a product..." /></SelectTrigger>
+                  <SelectContent>
+                    {(products || []).filter((p) => p.status === "active").map((p) => (
+                      <SelectItem key={p.id} value={p.id}>{p.title} ({p.brands?.name || "Unknown"})</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Affiliate URL</Label>
+                <Input
+                  placeholder="https://www.amazon.com/dp/B09V3K...?tag=mystore-20"
+                  value={manualUrl}
+                  onChange={(e) => setManualUrl(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground mt-1">Paste your full affiliate link from any platform</p>
+              </div>
+              <div>
+                <Label>Short Code (optional)</Label>
+                <Input
+                  placeholder="Auto-generated if empty"
+                  value={manualShortCode}
+                  onChange={(e) => setManualShortCode(e.target.value)}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setAddDialogOpen(false)}>Cancel</Button>
+              <Button onClick={handleManualAdd} disabled={!manualUrl.trim() || !manualProductId}>Save Link</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
 
       {brokenCount > 0 && (
@@ -88,7 +194,7 @@ export default function Links() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2"><Link2 className="h-5 w-5" /> Link Generator</CardTitle>
+          <CardTitle className="flex items-center gap-2"><Link2 className="h-5 w-5" /> Quick Generator</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
@@ -138,7 +244,7 @@ export default function Links() {
           ) : (links || []).length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               <p className="text-lg font-medium">No links yet</p>
-              <p className="text-sm">Generate your first affiliate link above</p>
+              <p className="text-sm">Generate a link above or click "Add Link" to paste your own</p>
             </div>
           ) : (
             <Table>
@@ -176,6 +282,12 @@ export default function Links() {
                         <Button variant="ghost" size="icon" onClick={() => copyToClipboard(link.affiliate_url)}>
                           <Copy className="h-3 w-3" />
                         </Button>
+                        <Button variant="ghost" size="icon" onClick={() => setEditingLink({ id: link.id, affiliate_url: link.affiliate_url, short_code: link.short_code })}>
+                          <Pencil className="h-3 w-3" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => setDeleteConfirmId(link.id)}>
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
                         <Button variant="ghost" size="icon" asChild>
                           <a href={link.affiliate_url} target="_blank" rel="noopener noreferrer">
                             <ExternalLink className="h-3 w-3" />
@@ -190,6 +302,47 @@ export default function Links() {
           )}
         </CardContent>
       </Card>
+
+      {/* Edit Dialog */}
+      <Dialog open={!!editingLink} onOpenChange={(open) => !open && setEditingLink(null)}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Edit Link</DialogTitle></DialogHeader>
+          {editingLink && (
+            <div className="space-y-4">
+              <div>
+                <Label>Affiliate URL</Label>
+                <Input
+                  value={editingLink.affiliate_url}
+                  onChange={(e) => setEditingLink({ ...editingLink, affiliate_url: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label>Short Code</Label>
+                <Input
+                  value={editingLink.short_code}
+                  onChange={(e) => setEditingLink({ ...editingLink, short_code: e.target.value })}
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingLink(null)}>Cancel</Button>
+            <Button onClick={handleEdit}>Save Changes</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={!!deleteConfirmId} onOpenChange={(open) => !open && setDeleteConfirmId(null)}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Delete Link</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">Are you sure? This will permanently remove this affiliate link and its tracking data.</p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteConfirmId(null)}>Cancel</Button>
+            <Button variant="destructive" onClick={() => deleteConfirmId && handleDelete(deleteConfirmId)}>Delete</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
