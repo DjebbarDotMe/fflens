@@ -17,6 +17,7 @@ export type Database = {
       affiliate_links: {
         Row: {
           affiliate_url: string
+          channel_id: string | null
           click_count: number
           conversions: number
           created_at: string
@@ -30,6 +31,7 @@ export type Database = {
         }
         Insert: {
           affiliate_url: string
+          channel_id?: string | null
           click_count?: number
           conversions?: number
           created_at?: string
@@ -43,6 +45,7 @@ export type Database = {
         }
         Update: {
           affiliate_url?: string
+          channel_id?: string | null
           click_count?: number
           conversions?: number
           created_at?: string
@@ -55,6 +58,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "affiliate_links_channel_id_fkey"
+            columns: ["channel_id"]
+            isOneToOne: false
+            referencedRelation: "channels"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "affiliate_links_product_id_fkey"
             columns: ["product_id"]
@@ -98,6 +108,30 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      channels: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          url: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          url?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          url?: string | null
+          user_id?: string
+        }
+        Relationships: []
       }
       link_clicks: {
         Row: {
@@ -276,19 +310,31 @@ export type Database = {
           created_at: string
           display_name: string | null
           email: string | null
+          has_completed_onboarding: boolean
           id: string
+          utm_campaign: string | null
+          utm_medium: string | null
+          utm_source: string | null
         }
         Insert: {
           created_at?: string
           display_name?: string | null
           email?: string | null
+          has_completed_onboarding?: boolean
           id: string
+          utm_campaign?: string | null
+          utm_medium?: string | null
+          utm_source?: string | null
         }
         Update: {
           created_at?: string
           display_name?: string | null
           email?: string | null
+          has_completed_onboarding?: boolean
           id?: string
+          utm_campaign?: string | null
+          utm_medium?: string | null
+          utm_source?: string | null
         }
         Relationships: []
       }
