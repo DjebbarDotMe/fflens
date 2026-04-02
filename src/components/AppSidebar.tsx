@@ -69,6 +69,9 @@ export function AppSidebar() {
           <LogOut className="mr-2 h-4 w-4" />
           {!collapsed && "Sign Out"}
         </Button>
+        {!collapsed && (
+          <p className="text-[10px] text-muted-foreground/50 text-center mt-1">v1.0.0</p>
+        )}
       </SidebarFooter>
     </Sidebar>
   );
