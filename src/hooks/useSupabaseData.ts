@@ -46,7 +46,7 @@ export function useAffiliateLinks() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("affiliate_links")
-        .select("*, products(title, brands(name))")
+        .select("*, products(title, brands(name)), channels(name)")
         .order("created_at", { ascending: false });
       if (error) throw error;
       return data;
@@ -62,6 +62,36 @@ export function useUserCredentials() {
         .from("user_credentials")
         .select("*, networks(name)")
         .order("created_at", { ascending: false });
+      if (error) throw error;
+      return data;
+    },
+  });
+}
+
+export function useChannels() {
+  return useQuery({
+    queryKey: ["channels"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("channels")
+        .select("*")
+        .order("name");
+      if (error) throw error;
+      return data;
+    },
+  });
+}
+
+export function useProfile(userId: string | undefined) {
+  return useQuery({
+    queryKey: ["profile", userId],
+    enabled: !!userId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", userId!)
+        .single();
       if (error) throw error;
       return data;
     },
