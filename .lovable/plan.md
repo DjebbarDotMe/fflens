@@ -1,108 +1,120 @@
 
 
-# Gap Analysis: Your Prompt vs. Current Implementation
+## Critical Review of the Proposed Tasks
 
-Here's what's missing from our current build, mapped against your detailed prompt. I've adapted everything to our stack (React + Vite + Supabase, not Next.js).
-
----
-
-## What We Already Have ✓
-- App shell with sidebar navigation (Dashboard, Products, Brands, Links, Settings)
-- Product data model with brand associations
-- Affiliate URL template system with placeholder injection
-- Dashboard with stats cards + Recharts click chart
-- Product search/filter by brand and category
-- Link generator with copy-to-clipboard
-- Network type labels (Amazon, Impact/CJ, Rakuten, ShareASale)
-- Settings page for affiliate ID config
-
-## What's Missing — Prioritized
-
-### 1. Networks table (separate from brands)
-Your prompt distinguishes **networks** (Amazon, Impact, CJ, Rakuten) from **merchants/brands**. Currently we conflate them. We need:
-- A `networks` table with `api_base_url`, `auth_type`
-- Brands/merchants belong to a network
-- Impact network added (missing from current `network_type` enum)
-
-### 2. User credentials management (encrypted)
-- `user_credentials` table: `user_id`, `network_id`, `affiliate_id`, `api_token_encrypted`
-- Settings page needs per-network credential input (not just a single affiliate ID)
-- Credentials stored encrypted in Supabase (pgcrypto)
-
-### 3. Product fields: `sku`, `availability_status`, `merchant_id`
-Current `products` model is missing:
-- `sku` (unique per network)
-- `availability_status` enum: `in_stock`, `out_of_stock`, `unknown`
-- `merchant_id`
-- `updated_at` timestamp
-- Availability badge in product table UI
-
-### 4. Link Health Monitor
-Entirely missing. Needs:
-- `link_health` table: `link_id`, `status_code`, `is_valid`, `error_message`, `last_checked_at`
-- Health status indicator (✓/✗) on each link in the Links page
-- Edge Function to check links via HTTP HEAD requests (no Puppeteer in our stack — use fetch with redirect follow)
-- "Refresh Health" button for manual checks
-- Broken links alert banner on Dashboard
-
-### 5. Click tracking enrichment
-Current `link_clicks` has `referrer`, `country`, `device`. Your prompt adds:
-- `ip_hash` (anonymized)
-- `user_agent`
-- Remove `country`/`device` (derive from user_agent if needed)
-
-### 6. Short link redirect route
-- Route `/r/:code` that looks up the short code, increments click count, logs the click, and redirects
-- This needs an Edge Function since Lovable is client-side only
-
-### 7. QR code generation
-- Currently placeholder — need actual QR code rendering (e.g., `qrcode` npm package)
-- Show QR code in link generator modal
-
-### 8. Product availability status in UI
-- Badge showing in_stock/out_of_stock/unknown
-- Filter by availability on Products page
-
-### 9. Analytics improvements
-- Top products by clicks (partially there)
-- Clicks per day chart filtered by link (not just aggregate)
-- Broken links alert banner
-
-### 10. Bulk product import (CSV)
-- Currently just a placeholder button
-- Need CSV parsing + insert logic
-
-### 11. Authentication
-- Your prompt uses NextAuth; we'd use Supabase Auth (email + Google OAuth)
-- Needed before user credentials can be stored per-user
+Here's my honest assessment of each task, what's worth doing, what needs rethinking, and what I'd push back on.
 
 ---
 
-## Out of Scope (Aligned with Your Prompt)
-- Product ingestion from live APIs (Amazon PAAPI, Impact, CJ, Rakuten) — future feature
-- Docker/self-hosting setup (N/A for Lovable)
-- BullMQ/Redis queues (use Supabase pg_cron + Edge Functions instead)
-- Admin panel (deferred)
+### Task 1: Channels — Mostly Good, Minor Concerns
+
+**Verdict: Do it, but keep it simple.**
+
+The concept is sound — segmenting links by channel (blog, YouTube, Instagram) is a real affiliate marketing need. However:
+
+- The `url` field on channels is vague. What URL? The channel's homepage? This needs a clearer purpose or it'll just be a dead field nobody fills in.
+- Adding `channel_id` as nullable FK to `affiliate_links` is the right call for backward compatibility.
+
+**Plan:**
+1. Migration: Create `channels` table (`id`, `user_id`, `name`, `url`, `created_at`) with RLS policies scoped to `user_id = auth.uid()`.
+2. Migration: Add nullable `channel_id` column to `affiliate_links`.
+3. Add `useChannels` hook to `useSupabaseData.ts`.
+4. Update Links page: channel dropdown in generator + add link dialog, channel badge in links table.
 
 ---
 
-## Recommended Implementation Order
+### Task 2: Required Onboarding Wizard — Pushback
 
-1. **Set up Supabase database** — Create `networks`, `products`, `brands`, `user_credentials`, `affiliate_links`, `link_health`, `link_clicks` tables with proper RLS
-2. **Add auth** — Supabase Auth with email + Google
-3. **Update data models & UI** — Add missing fields (sku, availability, merchant_id), update Product/Brand pages
-4. **User credentials page** — Per-network credential management in Settings
-5. **Link health system** — Edge Function for HTTP checks, health status UI, broken link alerts
-6. **Short link redirect** — Edge Function for `/r/:code` with click tracking
-7. **QR code generation** — Real QR codes in link generator
-8. **CSV import** — Bulk product import from CSV files
+**Verdict: Partially disagree. The forced redirect is heavy-handed for an MVP.**
+
+Concerns:
+- **Forcing 3 steps before seeing the dashboard is an activation killer.** Users want to explore first, not fill out forms. A better pattern: show an empty-state prompt on each page ("Add your first brand to get started") rather than a gated wizard.
+- **Step 2 (Brands) is odd as onboarding.** Brands are merchant/advertiser relationships — a new user likely doesn't know which brands to add yet. They'd add brands as they discover programs.
+- **Checking "0 credentials OR 0 channels" is fragile.** What if a user deletes their last credential later? They'd get thrown back into onboarding.
+
+**Counter-proposal:** Build a lightweight welcome modal (not a separate route) that appears once for new users. It guides them to add their first credential and channel, but is dismissable. Track completion via a `has_completed_onboarding` flag on the `profiles` table.
+
+**Plan (revised approach):**
+1. Migration: Add `has_completed_onboarding boolean DEFAULT false` to `profiles`.
+2. Create `/onboarding` route with a 2-step wizard (Networks + Channels only — skip Brands).
+3. Redirect new users (where `has_completed_onboarding = false`) to `/onboarding` after login.
+4. On completion, set the flag and redirect to dashboard. Users can skip if they want.
 
 ---
 
-## Technical Notes
+### Task 3: CRUD for Products and Brands — Yes, Do It
 
-- **No Puppeteer**: Link health checks will use `fetch()` in an Edge Function (HEAD requests with redirect following). Sufficient for HTTP status + redirect validation.
-- **Encrypted credentials**: Use Supabase Vault or pgcrypto `pgp_sym_encrypt`/`pgp_sym_decrypt` for user API tokens.
-- **Short link redirects**: Requires an Edge Function since this is a client-side app — can't do server-side redirects from React Router.
-- **Impact network**: Add `'impact'` to the network_type enum alongside existing ones.
+**Verdict: Overdue. Straightforward.**
+
+Currently Products has no edit/delete, and Brands has no edit/delete. The products table is also missing a DELETE RLS policy — that needs fixing.
+
+**Plan:**
+1. Migration: Add DELETE policy on `products` table for authenticated users.
+2. Products page: Add edit dialog (reuse add form layout), delete with confirmation dialog.
+3. Brands page: Same — edit dialog and delete with confirmation.
+
+---
+
+### Task 4: UTM Parameters — Yes, but Simpler Than Proposed
+
+**Verdict: Good idea, but profiles table already exists — no new table needed.**
+
+The `profiles` table exists with `id`, `email`, `display_name`. We just need to add UTM columns.
+
+**Plan:**
+1. Migration: Add `utm_source`, `utm_medium`, `utm_campaign` (all text, nullable) to `profiles`.
+2. Wire Settings page UTM inputs to read/save from profile.
+3. Update link generation logic to append UTM params when present.
+
+---
+
+### Task 5: Refresh Health Button — Yes
+
+**Verdict: Good. The UI exists, the backend doesn't.**
+
+**Plan:**
+1. Create edge function `check-link-health` that does a HEAD request and returns status.
+2. Wire the Refresh button on Links page to call the function, update `health_status` on `affiliate_links`, and refresh the query.
+
+---
+
+### Task 6: Short Link Redirect — Yes, but with a caveat
+
+**Verdict: Important, but `link_clicks` INSERT policy is missing.**
+
+Currently `link_clicks` has no INSERT RLS policy, and the redirect function needs to insert anonymously (no auth). We need either a service-role insert in the edge function or an anon INSERT policy.
+
+**Plan:**
+1. Create edge function `redirect-handler` using service role key to look up short code and insert click record.
+2. Return 302 redirect to the destination URL.
+3. No RLS change needed — service role bypasses RLS.
+
+---
+
+## Execution Order
+
+I'd recommend this order based on dependencies and impact:
+
+1. **Task 1** (Channels) — new data model, needed by Task 2
+2. **Task 2** (Onboarding, revised) — depends on channels existing
+3. **Task 3** (CRUD) — independent, high user value
+4. **Task 4** (UTM) — independent, quick win
+5. **Task 5** (Health check) — independent edge function
+6. **Task 6** (Redirect) — independent edge function
+
+### Summary of Changes
+
+| Area | Files Modified/Created |
+|------|----------------------|
+| Migrations | 4 new migrations (channels table, channel_id on links, products DELETE policy, UTM cols on profiles) |
+| Hooks | `useSupabaseData.ts` — add `useChannels`, `useProfile` |
+| Pages | `Links.tsx`, `Products.tsx`, `Brands.tsx`, `SettingsPage.tsx` — CRUD + channel support |
+| New pages | `Onboarding.tsx` |
+| Routing | `App.tsx` — add `/onboarding` route + redirect logic |
+| Edge functions | `check-link-health/index.ts`, `redirect-handler/index.ts` |
+| Version | Bump to v1.2.0 |
+
+**Total: ~6 migrations, 2 edge functions, 1 new page, 5 modified pages.**
+
+Want me to proceed? I'd start with Tasks 1 and 2 as requested.
 
