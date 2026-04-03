@@ -51,6 +51,9 @@ export default function Links() {
   const [abEnabled, setAbEnabled] = useState(false);
   const [abUrl, setAbUrl] = useState("");
 
+  // Verification dialog state
+  const [verificationLinkId, setVerificationLinkId] = useState<string | null>(null);
+
   // AI copy generator state
   const [copyDialogLink, setCopyDialogLink] = useState<any>(null);
   const [copyVariants, setCopyVariants] = useState<CopyVariants | null>(null);
