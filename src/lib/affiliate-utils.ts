@@ -51,11 +51,13 @@ export const availabilityColors: Record<string, string> = {
 export const healthStatusLabels: Record<string, string> = {
   healthy: 'Healthy',
   broken: 'Broken',
+  warning: 'Warning',
   unknown: 'Unchecked',
 };
 
 export const healthStatusColors: Record<string, string> = {
   healthy: 'bg-emerald-100 text-emerald-800',
   broken: 'bg-red-100 text-red-800',
+  warning: 'bg-amber-100 text-amber-800',
   unknown: 'bg-muted text-muted-foreground',
 };
