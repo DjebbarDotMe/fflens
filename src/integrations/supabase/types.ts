@@ -215,6 +215,59 @@ export type Database = {
           },
         ]
       }
+      link_verifications: {
+        Row: {
+          checked_at: string
+          final_url: string | null
+          id: string
+          issues: string[] | null
+          link_id: string
+          missing_params: string[] | null
+          overall_status: string
+          page_title: string | null
+          params_intact: boolean | null
+          price_found: number | null
+          product_available: boolean | null
+          redirect_chain: Json | null
+        }
+        Insert: {
+          checked_at?: string
+          final_url?: string | null
+          id?: string
+          issues?: string[] | null
+          link_id: string
+          missing_params?: string[] | null
+          overall_status?: string
+          page_title?: string | null
+          params_intact?: boolean | null
+          price_found?: number | null
+          product_available?: boolean | null
+          redirect_chain?: Json | null
+        }
+        Update: {
+          checked_at?: string
+          final_url?: string | null
+          id?: string
+          issues?: string[] | null
+          link_id?: string
+          missing_params?: string[] | null
+          overall_status?: string
+          page_title?: string | null
+          params_intact?: boolean | null
+          price_found?: number | null
+          product_available?: boolean | null
+          redirect_chain?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "link_verifications_link_id_fkey"
+            columns: ["link_id"]
+            isOneToOne: false
+            referencedRelation: "affiliate_links"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       networks: {
         Row: {
           api_base_url: string | null
