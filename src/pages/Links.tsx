@@ -454,12 +454,16 @@ export default function Links() {
                     <TableCell className="text-right">{link.conversions || 0}</TableCell>
                     <TableCell className="text-right">${Number(link.revenue || 0).toLocaleString()}</TableCell>
                     <TableCell>
-                      <div className="flex items-center gap-1.5">
+                      <button
+                        className="flex items-center gap-1.5 cursor-pointer hover:opacity-80 transition-opacity"
+                        onClick={() => setVerificationLinkId(link.id)}
+                        title="Click to view verification details"
+                      >
                         <HealthIcon status={link.health_status || "unknown"} />
                         <Badge className={healthStatusColors[link.health_status || "unknown"]}>
                           {healthStatusLabels[link.health_status || "unknown"]}
                         </Badge>
-                      </div>
+                      </button>
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-1">
