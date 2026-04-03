@@ -1,79 +1,83 @@
 
 
-## Critical Assessment of Phase 2 Features
+## Deep Link Verification Pipeline
 
-### Task 1: Geo-Targeting & A/B Testing — Proceed with Caution
+### What We're Building
 
-**Verdict: Worth doing, but scope it tight.**
+A comprehensive link verification system that goes beyond the current simple HTTP HEAD check. The new system will:
 
-- JSONB columns for `geo_rules` and `ab_test_urls` are fine — flexible and don't break existing data.
-- The "Advanced Options" accordion UI is reasonable. Keep it collapsed by default so it doesn't overwhelm the link creation flow.
-- **Concern:** Without analytics to show which variant or geo-route won, A/B testing data is useless. Users will set it up but never know if it worked. We should at minimum record which URL was served in `link_clicks` so results can be analyzed later.
+1. **Follow the full redirect chain** and record each hop
+2. **Verify affiliate tracking parameters** survive the redirect (tag, clickId, etc.)
+3. **Scrape the final landing page** to check product availability, price, and page status
+4. **Store detailed verification results** for each link
 
-**Plan:**
-1. Migration: Add `geo_rules jsonb` and `ab_test_urls jsonb` (both nullable) to `affiliate_links`. Add `country_code text` and `served_url text` columns to `link_clicks` for tracking.
-2. UI: Add an Accordion component below the link generator with geo-rule inputs (country code + URL pairs) and an A/B toggle with secondary URL input. Store as JSON on insert.
+### Current State
 
----
+The `check-link-health` edge function only does a `HEAD` request and checks if the HTTP status is < 400. It stores a binary `healthy`/`broken` result. No redirect chain analysis, no parameter verification, no page content inspection.
 
-### Task 2: Advanced Redirect Engine — Yes, with Realistic Expectations
+### Implementation Plan
 
-**Verdict: Do it, but geo-detection will be limited.**
+**Step 1: Database migration — Add verification results table**
 
-- Supabase Edge Functions run on Deno Deploy. The `cf-ipcountry` header is Cloudflare-specific and **not available** on Supabase edge functions. We'd need to use a free IP geolocation API or accept-language header as a fallback — or just skip geo for now and focus on A/B testing which works reliably.
-- A/B split is straightforward: `Math.random() < 0.5`.
-- Recording `country_code` and `served_url` in `link_clicks` is essential for any analytics value.
+Create a `link_verifications` table to store detailed results per check:
 
-**Plan:**
-1. Update `redirect-handler` to select `geo_rules, ab_test_urls` alongside `affiliate_url`.
-2. Implement A/B logic: if `ab_test_urls` has entries, randomly pick between primary and alternates.
-3. Attempt geo-detection via `cf-ipcountry` header (best-effort, won't work on all deployments). If matched, route to geo URL.
-4. Record `country_code` and `served_url` in the `link_clicks` insert.
+| Column | Type | Purpose |
+|--------|------|---------|
+| `id` | uuid | PK |
+| `link_id` | uuid | FK to affiliate_links |
+| `checked_at` | timestamptz | When the check ran |
+| `redirect_chain` | jsonb | Array of `{url, status_code}` hops |
+| `final_url` | text | Where the redirect chain ended |
+| `params_intact` | boolean | Whether affiliate params survived |
+| `missing_params` | text[] | Which params were lost |
+| `page_title` | text | Title of the landing page |
+| `product_available` | boolean | Whether product appears in-stock |
+| `price_found` | numeric | Price scraped from page (if any) |
+| `overall_status` | text | `healthy` / `warning` / `broken` |
+| `issues` | text[] | Human-readable list of problems found |
 
----
+RLS: Users can view verifications for their own links (same pattern as `link_clicks`).
 
-### Task 3: Automated Price & Stock Sync — Strong Pushback
+**Step 2: Upgrade `check-link-health` edge function**
 
-**Verdict: Premature. Skip for now.**
+Replace the simple HEAD check with a multi-step pipeline:
 
-- **No network APIs are actually integrated.** The `networks` table has URL templates and slugs, but there's no API authentication flow to pull data from Amazon, ShareASale, etc. Building a sync pipeline with no data source is building plumbing to nowhere.
-- **Cron on Supabase** requires `pg_cron` + `pg_net` extensions and a persistent anon key in SQL — adding complexity for zero value right now.
-- **Database triggers on JSONB parsing** are fragile and hard to debug.
-- **Counter-proposal:** Skip this entirely until at least one network API integration is live. When ready, build a simpler approach: an edge function that users manually trigger per-network, not an automated pipeline.
+1. **Redirect chain tracking**: Use `fetch` with `redirect: "manual"` in a loop to follow each hop, recording URL and status at every step. Stop after 10 hops (loop protection).
 
----
+2. **Parameter verification**: Parse the original `affiliate_url` to extract expected query params (tag, clickId, affiliate_id, etc.). Compare against the final URL's query params. Flag any that were dropped during redirects.
 
-### Task 4: AI Content Generator — Yes, Quick Win
+3. **Page content scraping**: On the final URL, do a `GET` request with a browser-like User-Agent. Parse the HTML response to extract:
+   - `<title>` tag (detect "404", "Page Not Found", redirect-to-homepage patterns)
+   - Price elements (common patterns: `[class*="price"]`, `meta[property="product:price:amount"]`, JSON-LD `@type: Product`)
+   - Availability signals (schema.org `availability`, "out of stock" text, "add to cart" button presence)
 
-**Verdict: High value, low effort. Do it.**
+4. **Store results**: Insert a row into `link_verifications` and update the `affiliate_links.health_status` based on the overall assessment:
+   - `healthy` = redirect works, params intact, product page loads
+   - `warning` = redirect works but params missing or product status unclear
+   - `broken` = redirect fails, 404, or product page is dead
 
-- This project has access to Lovable AI models (no API key needed), so we can use a real LLM instead of mock data.
-- Add a "Generate Copy" button (Sparkles icon) to each link row's actions.
-- Dialog fetches product title + brand name, calls an edge function that uses Lovable AI to generate 3 copy variants (Twitter/X, Pinterest, email).
-- Each variant gets a "Copy to Clipboard" button.
+**Step 3: Update the Links UI**
 
-**Plan:**
-1. Create edge function `generate-copy` that accepts product title, brand name, and short code. Calls Lovable AI to generate 3 text variants.
-2. Add Sparkles button to Links table actions column.
-3. Build a Dialog with loading state, displaying 3 generated variants with copy buttons.
+- Change "Refresh Health" button behavior to call the upgraded function
+- Add a detail popover/dialog when clicking a health badge, showing:
+  - Redirect chain visualization (URL1 → URL2 → ... → Final)
+  - Parameter check results (green checkmark / red X per param)
+  - Product page snapshot (title, price found, availability)
+  - List of issues found
+- Add a `last_verified_at` timestamp display
 
----
-
-## Recommended Execution Order
-
-1. **Task 1** — Geo/A/B data model + UI (needed before Task 2)
-2. **Task 2** — Redirect engine upgrade (depends on Task 1 columns)
-3. **Task 4** — AI content generator (independent, high impact)
-4. ~~Task 3~~ — **Skip** until network APIs are integrated
-
-## Summary of Changes
+### Technical Details
 
 | Area | Changes |
 |------|---------|
-| Migrations | Add `geo_rules`, `ab_test_urls` to `affiliate_links`; add `country_code`, `served_url` to `link_clicks` |
-| Edge functions | Update `redirect-handler`; create `generate-copy` |
-| Pages | `Links.tsx` — Advanced Options accordion, AI copy button + dialog |
-| Version | Bump to v1.3.0 |
+| Migration | Create `link_verifications` table with RLS |
+| Edge function | Rewrite `check-link-health/index.ts` with redirect chain follower, param checker, and HTML scraper |
+| UI | Update `Links.tsx` — health badge click opens verification detail dialog |
+| No new dependencies | Uses native `fetch` + basic HTML string parsing (regex for title/meta/JSON-LD) |
 
-**Total: 1 migration, 1 updated edge function, 1 new edge function, 1 modified page.**
+### Limitations (Honest Assessment)
+
+- **JavaScript-rendered pages** (SPAs) won't return useful HTML via server-side fetch. Most retail product pages server-render enough for price/availability detection.
+- **Rate limiting**: Some retailers block rapid requests. We use a 10s timeout and browser-like headers to mitigate.
+- **Network confirmation** (verifying the link is actually earning commissions) is not possible without API access to each network. We can detect if tracking params are present, but not if the network recognizes them. This is a UI-level "best effort" indicator.
 
