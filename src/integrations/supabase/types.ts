@@ -16,11 +16,13 @@ export type Database = {
     Tables: {
       affiliate_links: {
         Row: {
+          ab_test_urls: Json | null
           affiliate_url: string
           channel_id: string | null
           click_count: number
           conversions: number
           created_at: string
+          geo_rules: Json | null
           health_status: Database["public"]["Enums"]["health_status"]
           health_status_code: number | null
           id: string
@@ -30,11 +32,13 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          ab_test_urls?: Json | null
           affiliate_url: string
           channel_id?: string | null
           click_count?: number
           conversions?: number
           created_at?: string
+          geo_rules?: Json | null
           health_status?: Database["public"]["Enums"]["health_status"]
           health_status_code?: number | null
           id?: string
@@ -44,11 +48,13 @@ export type Database = {
           user_id: string
         }
         Update: {
+          ab_test_urls?: Json | null
           affiliate_url?: string
           channel_id?: string | null
           click_count?: number
           conversions?: number
           created_at?: string
+          geo_rules?: Json | null
           health_status?: Database["public"]["Enums"]["health_status"]
           health_status_code?: number | null
           id?: string
@@ -136,26 +142,32 @@ export type Database = {
       link_clicks: {
         Row: {
           clicked_at: string
+          country_code: string | null
           id: string
           ip_hash: string | null
           link_id: string
           referrer: string | null
+          served_url: string | null
           user_agent: string | null
         }
         Insert: {
           clicked_at?: string
+          country_code?: string | null
           id?: string
           ip_hash?: string | null
           link_id: string
           referrer?: string | null
+          served_url?: string | null
           user_agent?: string | null
         }
         Update: {
           clicked_at?: string
+          country_code?: string | null
           id?: string
           ip_hash?: string | null
           link_id?: string
           referrer?: string | null
+          served_url?: string | null
           user_agent?: string | null
         }
         Relationships: [
