@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Switch } from "@/components/ui/switch";
 import { Copy, Link2, ExternalLink, RefreshCw, CheckCircle2, XCircle, HelpCircle, Plus, Pencil, Trash2, Loader2, Sparkles, X } from "lucide-react";
+import LinkVerificationDialog from "@/components/LinkVerificationDialog";
 import { useProducts, useAffiliateLinks, useUserCredentials, useChannels, useProfile } from "@/hooks/useSupabaseData";
 import { generateAffiliateUrl, generateShortCode, healthStatusLabels, healthStatusColors } from "@/lib/affiliate-utils";
 import { supabase } from "@/integrations/supabase/client";
@@ -49,6 +50,9 @@ export default function Links() {
   const [geoRules, setGeoRules] = useState<GeoRule[]>([]);
   const [abEnabled, setAbEnabled] = useState(false);
   const [abUrl, setAbUrl] = useState("");
+
+  // Verification dialog state
+  const [verificationLinkId, setVerificationLinkId] = useState<string | null>(null);
 
   // AI copy generator state
   const [copyDialogLink, setCopyDialogLink] = useState<any>(null);
@@ -219,6 +223,7 @@ export default function Links() {
   const HealthIcon = ({ status }: { status: string }) => {
     if (status === "healthy") return <CheckCircle2 className="h-4 w-4 text-emerald-600" />;
     if (status === "broken") return <XCircle className="h-4 w-4 text-red-600" />;
+    if (status === "warning") return <HelpCircle className="h-4 w-4 text-amber-600" />;
     return <HelpCircle className="h-4 w-4 text-muted-foreground" />;
   };
 
@@ -450,12 +455,16 @@ export default function Links() {
                     <TableCell className="text-right">{link.conversions || 0}</TableCell>
                     <TableCell className="text-right">${Number(link.revenue || 0).toLocaleString()}</TableCell>
                     <TableCell>
-                      <div className="flex items-center gap-1.5">
+                      <button
+                        className="flex items-center gap-1.5 cursor-pointer hover:opacity-80 transition-opacity"
+                        onClick={() => setVerificationLinkId(link.id)}
+                        title="Click to view verification details"
+                      >
                         <HealthIcon status={link.health_status || "unknown"} />
                         <Badge className={healthStatusColors[link.health_status || "unknown"]}>
                           {healthStatusLabels[link.health_status || "unknown"]}
                         </Badge>
-                      </div>
+                      </button>
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-1">
@@ -560,6 +569,11 @@ export default function Links() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {/* Link Verification Dialog */}
+      <LinkVerificationDialog
+        linkId={verificationLinkId}
+        onClose={() => setVerificationLinkId(null)}
+      />
     </div>
   );
 }
