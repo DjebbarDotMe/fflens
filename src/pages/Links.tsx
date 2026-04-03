@@ -223,6 +223,7 @@ export default function Links() {
   const HealthIcon = ({ status }: { status: string }) => {
     if (status === "healthy") return <CheckCircle2 className="h-4 w-4 text-emerald-600" />;
     if (status === "broken") return <XCircle className="h-4 w-4 text-red-600" />;
+    if (status === "warning") return <HelpCircle className="h-4 w-4 text-amber-600" />;
     return <HelpCircle className="h-4 w-4 text-muted-foreground" />;
   };
 
