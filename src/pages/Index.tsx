@@ -3,15 +3,15 @@ import { Package, Store, MousePointerClick, DollarSign, AlertTriangle } from "lu
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { useProducts, useBrands, useAffiliateLinks } from "@/hooks/useSupabaseData";
+import { useProducts, useBrands, useAffiliateLinks, useClicksOverTime } from "@/hooks/useSupabaseData";
 import { healthStatusColors, healthStatusLabels } from "@/lib/affiliate-utils";
 import { Skeleton } from "@/components/ui/skeleton";
-import { mockClicksOverTime } from "@/lib/mock-data";
 
 export default function Dashboard() {
   const { data: products, isLoading: loadingProducts } = useProducts();
   const { data: brands, isLoading: loadingBrands } = useBrands();
   const { data: links, isLoading: loadingLinks } = useAffiliateLinks();
+  const { data: clicksOverTime, isLoading: loadingClicks } = useClicksOverTime();
 
   const totalProducts = products?.length || 0;
   const totalBrands = brands?.length || 0;
@@ -21,10 +21,10 @@ export default function Dashboard() {
   const topLinks = [...(links || [])].sort((a, b) => (b.click_count || 0) - (a.click_count || 0)).slice(0, 5);
 
   const stats = [
-    { label: "Total Products", value: totalProducts, icon: Package, change: "+12%" },
-    { label: "Active Brands", value: totalBrands, icon: Store, change: "+2" },
-    { label: "Total Clicks", value: totalClicks.toLocaleString(), icon: MousePointerClick, change: "+18%" },
-    { label: "Est. Revenue", value: `$${totalRevenue.toLocaleString()}`, icon: DollarSign, change: "+24%" },
+    { label: "Total Products", value: totalProducts, icon: Package },
+    { label: "Active Brands", value: totalBrands, icon: Store },
+    { label: "Total Clicks", value: totalClicks.toLocaleString(), icon: MousePointerClick },
+    { label: "Est. Revenue", value: `$${totalRevenue.toLocaleString()}`, icon: DollarSign },
   ];
 
   const isLoading = loadingProducts || loadingBrands || loadingLinks;
@@ -57,10 +57,7 @@ export default function Dashboard() {
             </CardHeader>
             <CardContent>
               {isLoading ? <Skeleton className="h-8 w-20" /> : (
-                <>
-                  <div className="text-2xl font-bold">{s.value}</div>
-                  <p className="text-xs text-muted-foreground">{s.change} from last month</p>
-                </>
+                <div className="text-2xl font-bold">{s.value}</div>
               )}
             </CardContent>
           </Card>
@@ -69,20 +66,25 @@ export default function Dashboard() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Clicks & Conversions (Last 30 Days)</CardTitle>
+          <CardTitle>Clicks (Last 30 Days)</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={mockClicksOverTime}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                <XAxis dataKey="date" className="text-xs" tick={{ fill: 'hsl(var(--muted-foreground))' }} />
-                <YAxis className="text-xs" tick={{ fill: 'hsl(var(--muted-foreground))' }} />
-                <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))' }} />
-                <Line type="monotone" dataKey="clicks" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} />
-                <Line type="monotone" dataKey="conversions" stroke="hsl(var(--destructive))" strokeWidth={2} dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
+            {loadingClicks ? (
+              <div className="flex items-center justify-center h-full">
+                <Skeleton className="h-full w-full" />
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={clicksOverTime}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                  <XAxis dataKey="date" className="text-xs" tick={{ fill: 'hsl(var(--muted-foreground))' }} />
+                  <YAxis className="text-xs" tick={{ fill: 'hsl(var(--muted-foreground))' }} />
+                  <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))' }} />
+                  <Line type="monotone" dataKey="clicks" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </CardContent>
       </Card>
