@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Switch } from "@/components/ui/switch";
 import { Copy, Link2, ExternalLink, RefreshCw, CheckCircle2, XCircle, HelpCircle, Plus, Pencil, Trash2, Loader2, Sparkles, X } from "lucide-react";
+import LinkVerificationDialog from "@/components/LinkVerificationDialog";
 import { useProducts, useAffiliateLinks, useUserCredentials, useChannels, useProfile } from "@/hooks/useSupabaseData";
 import { generateAffiliateUrl, generateShortCode, healthStatusLabels, healthStatusColors } from "@/lib/affiliate-utils";
 import { supabase } from "@/integrations/supabase/client";
