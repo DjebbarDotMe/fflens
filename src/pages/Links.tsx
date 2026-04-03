@@ -7,7 +7,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
-import { Copy, Link2, ExternalLink, RefreshCw, CheckCircle2, XCircle, HelpCircle, Plus, Pencil, Trash2, Loader2 } from "lucide-react";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Switch } from "@/components/ui/switch";
+import { Copy, Link2, ExternalLink, RefreshCw, CheckCircle2, XCircle, HelpCircle, Plus, Pencil, Trash2, Loader2, Sparkles, X } from "lucide-react";
 import { useProducts, useAffiliateLinks, useUserCredentials, useChannels, useProfile } from "@/hooks/useSupabaseData";
 import { generateAffiliateUrl, generateShortCode, healthStatusLabels, healthStatusColors } from "@/lib/affiliate-utils";
 import { supabase } from "@/integrations/supabase/client";
@@ -16,6 +18,17 @@ import { toast } from "sonner";
 import { QRCodeSVG } from "qrcode.react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Skeleton } from "@/components/ui/skeleton";
+
+interface GeoRule {
+  country: string;
+  url: string;
+}
+
+interface CopyVariants {
+  twitter: string;
+  pinterest: string;
+  email: string;
+}
 
 export default function Links() {
   const [selectedProduct, setSelectedProduct] = useState("");
@@ -32,6 +45,16 @@ export default function Links() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
+  // Advanced options state
+  const [geoRules, setGeoRules] = useState<GeoRule[]>([]);
+  const [abEnabled, setAbEnabled] = useState(false);
+  const [abUrl, setAbUrl] = useState("");
+
+  // AI copy generator state
+  const [copyDialogLink, setCopyDialogLink] = useState<any>(null);
+  const [copyVariants, setCopyVariants] = useState<CopyVariants | null>(null);
+  const [copyLoading, setCopyLoading] = useState(false);
+
   const { data: products } = useProducts();
   const { data: links, isLoading } = useAffiliateLinks();
   const { data: credentials } = useUserCredentials();
@@ -47,6 +70,18 @@ export default function Links() {
     const utmStr = params.toString();
     if (!utmStr) return url;
     return url + (url.includes("?") ? "&" : "?") + utmStr;
+  };
+
+  const buildAdvancedPayload = () => {
+    const payload: { geo_rules?: Record<string, string>; ab_test_urls?: string[] } = {};
+    const validGeo = geoRules.filter((r) => r.country.trim() && r.url.trim());
+    if (validGeo.length > 0) {
+      payload.geo_rules = Object.fromEntries(validGeo.map((r) => [r.country.toUpperCase(), r.url]));
+    }
+    if (abEnabled && abUrl.trim()) {
+      payload.ab_test_urls = [abUrl.trim()];
+    }
+    return payload;
   };
 
   const handleGenerate = async () => {
@@ -68,17 +103,22 @@ export default function Links() {
     setGeneratedUrl(url);
 
     const shortCode = generateShortCode(product.title);
+    const advanced = buildAdvancedPayload();
     const { error } = await supabase.from("affiliate_links").insert({
       user_id: user.id,
       product_id: product.id,
       affiliate_url: url,
       short_code: `${shortCode}-${Date.now().toString(36)}`,
       channel_id: selectedChannelGen || null,
-    });
+      ...advanced,
+    } as any);
     if (error) {
       if (!error.message.includes("duplicate")) toast.error(error.message);
     } else {
       toast.success("Affiliate link created!");
+      setGeoRules([]);
+      setAbEnabled(false);
+      setAbUrl("");
       queryClient.invalidateQueries({ queryKey: ["affiliate_links"] });
     }
   };
@@ -144,6 +184,28 @@ export default function Links() {
       toast.error(err.message || "Failed to check link health");
     } finally {
       setRefreshing(false);
+    }
+  };
+
+  const handleGenerateCopy = async (link: any) => {
+    setCopyDialogLink(link);
+    setCopyVariants(null);
+    setCopyLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("generate-copy", {
+        body: {
+          productTitle: link.products?.title || "Product",
+          brandName: link.products?.brands?.name || "",
+          shortCode: link.short_code,
+        },
+      });
+      if (error) throw error;
+      setCopyVariants(data as CopyVariants);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to generate copy");
+      setCopyDialogLink(null);
+    } finally {
+      setCopyLoading(false);
     }
   };
 
@@ -254,6 +316,68 @@ export default function Links() {
               </Select>
             </div>
             <ChannelSelect value={selectedChannelGen} onChange={(v) => setSelectedChannelGen(v === "none" ? "" : v)} />
+
+            {/* Advanced Options */}
+            <Accordion type="single" collapsible>
+              <AccordionItem value="advanced">
+                <AccordionTrigger className="text-sm font-medium">Advanced Options</AccordionTrigger>
+                <AccordionContent>
+                  <div className="space-y-4 pt-2">
+                    {/* Geo-Targeting */}
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium">Geo-Targeting Rules</Label>
+                      <p className="text-xs text-muted-foreground">Route visitors to different URLs based on their country.</p>
+                      {geoRules.map((rule, i) => (
+                        <div key={i} className="flex gap-2 items-center">
+                          <Input
+                            placeholder="Country (e.g. UK)"
+                            className="w-24"
+                            value={rule.country}
+                            onChange={(e) => {
+                              const updated = [...geoRules];
+                              updated[i].country = e.target.value;
+                              setGeoRules(updated);
+                            }}
+                          />
+                          <Input
+                            placeholder="Destination URL"
+                            value={rule.url}
+                            onChange={(e) => {
+                              const updated = [...geoRules];
+                              updated[i].url = e.target.value;
+                              setGeoRules(updated);
+                            }}
+                          />
+                          <Button variant="ghost" size="icon" onClick={() => setGeoRules(geoRules.filter((_, j) => j !== i))}>
+                            <X className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      ))}
+                      <Button variant="outline" size="sm" onClick={() => setGeoRules([...geoRules, { country: "", url: "" }])}>
+                        <Plus className="mr-1 h-3 w-3" /> Add Country Rule
+                      </Button>
+                    </div>
+
+                    {/* A/B Testing */}
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Switch checked={abEnabled} onCheckedChange={setAbEnabled} />
+                        <Label className="text-sm font-medium">Enable A/B Testing</Label>
+                      </div>
+                      <p className="text-xs text-muted-foreground">Split traffic 50/50 between primary and alternate URL.</p>
+                      {abEnabled && (
+                        <Input
+                          placeholder="Alternate destination URL"
+                          value={abUrl}
+                          onChange={(e) => setAbUrl(e.target.value)}
+                        />
+                      )}
+                    </div>
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
+
             <Button onClick={handleGenerate} disabled={!selectedProduct}>Generate Affiliate Link</Button>
             {generatedUrl && (
               <div className="space-y-4">
@@ -335,8 +459,11 @@ export default function Links() {
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-1">
-                        <Button variant="ghost" size="icon" onClick={() => copyToClipboard(link.affiliate_url)}>
+                        <Button variant="ghost" size="icon" onClick={() => copyToClipboard(link.affiliate_url)} title="Copy URL">
                           <Copy className="h-3 w-3" />
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => handleGenerateCopy(link)} title="Generate Copy">
+                          <Sparkles className="h-3 w-3" />
                         </Button>
                         <Button variant="ghost" size="icon" onClick={() => setEditingLink({ id: link.id, affiliate_url: link.affiliate_url, short_code: link.short_code })}>
                           <Pencil className="h-3 w-3" />
@@ -390,6 +517,46 @@ export default function Links() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteConfirmId(null)}>Cancel</Button>
             <Button variant="destructive" onClick={() => deleteConfirmId && handleDelete(deleteConfirmId)}>Delete</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* AI Copy Generator Dialog */}
+      <Dialog open={!!copyDialogLink} onOpenChange={(open) => !open && setCopyDialogLink(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5" /> AI Copy Generator
+            </DialogTitle>
+          </DialogHeader>
+          {copyLoading ? (
+            <div className="flex flex-col items-center py-8 gap-3">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              <p className="text-sm text-muted-foreground">Generating promotional copy...</p>
+            </div>
+          ) : copyVariants ? (
+            <div className="space-y-4">
+              {([
+                { key: "twitter" as const, label: "Twitter / X", icon: "𝕏" },
+                { key: "pinterest" as const, label: "Pinterest", icon: "📌" },
+                { key: "email" as const, label: "Email Snippet", icon: "✉️" },
+              ]).map(({ key, label, icon }) => (
+                <div key={key} className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-medium">{icon} {label}</Label>
+                    <Button variant="ghost" size="sm" onClick={() => copyToClipboard(copyVariants[key])}>
+                      <Copy className="h-3 w-3 mr-1" /> Copy
+                    </Button>
+                  </div>
+                  <div className="rounded-md border p-3 text-sm bg-muted/50 whitespace-pre-wrap">
+                    {copyVariants[key]}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCopyDialogLink(null)}>Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
