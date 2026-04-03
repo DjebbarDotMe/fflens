@@ -568,6 +568,11 @@ export default function Links() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {/* Link Verification Dialog */}
+      <LinkVerificationDialog
+        linkId={verificationLinkId}
+        onClose={() => setVerificationLinkId(null)}
+      />
     </div>
   );
 }
