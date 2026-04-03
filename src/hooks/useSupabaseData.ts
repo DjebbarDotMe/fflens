@@ -82,6 +82,39 @@ export function useChannels() {
   });
 }
 
+export function useClicksOverTime(days = 30) {
+  return useQuery({
+    queryKey: ["clicks_over_time", days],
+    queryFn: async () => {
+      const since = new Date();
+      since.setDate(since.getDate() - days);
+
+      const { data, error } = await supabase
+        .from("link_clicks")
+        .select("clicked_at")
+        .gte("clicked_at", since.toISOString())
+        .order("clicked_at", { ascending: true });
+      if (error) throw error;
+
+      // Group by date
+      const counts: Record<string, number> = {};
+      // Pre-fill all days with 0
+      for (let i = 0; i < days; i++) {
+        const d = new Date();
+        d.setDate(d.getDate() - (days - 1 - i));
+        const key = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+        counts[key] = 0;
+      }
+      for (const row of data || []) {
+        const key = new Date(row.clicked_at).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+        if (key in counts) counts[key] = (counts[key] || 0) + 1;
+      }
+
+      return Object.entries(counts).map(([date, clicks]) => ({ date, clicks }));
+    },
+  });
+}
+
 export function useProfile(userId: string | undefined) {
   return useQuery({
     queryKey: ["profile", userId],
