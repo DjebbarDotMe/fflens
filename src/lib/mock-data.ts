@@ -109,12 +109,3 @@ export const mockUserCredentials: UserCredential[] = [
   { id: 'uc2', network_id: 'n4', network_name: 'Rakuten Advertising', affiliate_id: 'rak-12345', has_api_token: false },
 ];
 
-export const mockClicksOverTime: ClickData[] = Array.from({ length: 30 }, (_, i) => {
-  const date = new Date();
-  date.setDate(date.getDate() - (29 - i));
-  return {
-    date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-    clicks: Math.floor(Math.random() * 150) + 30,
-    conversions: Math.floor(Math.random() * 15) + 2,
-  };
-});
