@@ -64,6 +64,7 @@ export default function Links() {
   const { data: credentials } = useUserCredentials();
   const { data: channels } = useChannels();
   const { data: profile } = useProfile(user?.id);
+  const { data: repairedIds } = useRepairedLinkIds();
 
   const appendUtmParams = (url: string) => {
     if (!profile) return url;
