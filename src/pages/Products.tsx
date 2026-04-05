@@ -180,6 +180,11 @@ export default function Products() {
                 {Object.entries(availabilityLabels).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}
               </SelectContent>
             </Select>
+            <div className="flex items-center gap-2">
+              <Input type="number" placeholder="Min $" className="w-[90px]" value={minPrice} onChange={(e) => setMinPrice(e.target.value)} />
+              <span className="text-muted-foreground text-sm">–</span>
+              <Input type="number" placeholder="Max $" className="w-[90px]" value={maxPrice} onChange={(e) => setMaxPrice(e.target.value)} />
+            </div>
           </div>
         </CardHeader>
         <CardContent>
