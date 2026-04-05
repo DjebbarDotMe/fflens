@@ -183,8 +183,14 @@ export default function Links() {
     try {
       const { data, error } = await supabase.functions.invoke("check-link-health");
       if (error) throw error;
-      toast.success(`Checked ${data?.checked || 0} links`);
+      const repaired = data?.results?.filter((r: any) => r.repaired).length || 0;
+      if (repaired > 0) {
+        toast.success(`Checked ${data?.checked || 0} links — ${repaired} auto-repaired!`);
+      } else {
+        toast.success(`Checked ${data?.checked || 0} links`);
+      }
       queryClient.invalidateQueries({ queryKey: ["affiliate_links"] });
+      queryClient.invalidateQueries({ queryKey: ["repaired_link_ids"] });
     } catch (err: any) {
       toast.error(err.message || "Failed to check link health");
     } finally {
