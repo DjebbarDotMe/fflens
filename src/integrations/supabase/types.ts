@@ -215,6 +215,39 @@ export type Database = {
           },
         ]
       }
+      link_repairs: {
+        Row: {
+          id: string
+          link_id: string
+          new_product_id: string | null
+          new_url: string
+          old_product_id: string | null
+          old_url: string
+          reason: string | null
+          repaired_at: string
+        }
+        Insert: {
+          id?: string
+          link_id: string
+          new_product_id?: string | null
+          new_url: string
+          old_product_id?: string | null
+          old_url: string
+          reason?: string | null
+          repaired_at?: string
+        }
+        Update: {
+          id?: string
+          link_id?: string
+          new_product_id?: string | null
+          new_url?: string
+          old_product_id?: string | null
+          old_url?: string
+          reason?: string | null
+          repaired_at?: string
+        }
+        Relationships: []
+      }
       link_verifications: {
         Row: {
           checked_at: string
@@ -302,6 +335,7 @@ export type Database = {
         Row: {
           affiliate_url_template: string | null
           availability_status: Database["public"]["Enums"]["availability_status"]
+          barcode: string | null
           brand_id: string | null
           category: string | null
           created_at: string
@@ -310,6 +344,7 @@ export type Database = {
           id: string
           image_url: string | null
           merchant_id: string | null
+          mpn: string | null
           network_id: string | null
           price: number | null
           sku: string
@@ -320,6 +355,7 @@ export type Database = {
         Insert: {
           affiliate_url_template?: string | null
           availability_status?: Database["public"]["Enums"]["availability_status"]
+          barcode?: string | null
           brand_id?: string | null
           category?: string | null
           created_at?: string
@@ -328,6 +364,7 @@ export type Database = {
           id?: string
           image_url?: string | null
           merchant_id?: string | null
+          mpn?: string | null
           network_id?: string | null
           price?: number | null
           sku: string
@@ -338,6 +375,7 @@ export type Database = {
         Update: {
           affiliate_url_template?: string | null
           availability_status?: Database["public"]["Enums"]["availability_status"]
+          barcode?: string | null
           brand_id?: string | null
           category?: string | null
           created_at?: string
@@ -346,6 +384,7 @@ export type Database = {
           id?: string
           image_url?: string | null
           merchant_id?: string | null
+          mpn?: string | null
           network_id?: string | null
           price?: number | null
           sku?: string

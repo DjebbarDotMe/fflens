@@ -115,6 +115,35 @@ export function useClicksOverTime(days = 30) {
   });
 }
 
+export function useLinkRepairs(linkId: string | null) {
+  return useQuery({
+    queryKey: ["link_repairs", linkId],
+    enabled: !!linkId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("link_repairs")
+        .select("*")
+        .eq("link_id", linkId!)
+        .order("repaired_at", { ascending: false });
+      if (error) throw error;
+      return data;
+    },
+  });
+}
+
+export function useRepairedLinkIds() {
+  return useQuery({
+    queryKey: ["repaired_link_ids"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("link_repairs")
+        .select("link_id");
+      if (error) throw error;
+      return new Set((data || []).map((r: any) => r.link_id));
+    },
+  });
+}
+
 export function useProfile(userId: string | undefined) {
   return useQuery({
     queryKey: ["profile", userId],

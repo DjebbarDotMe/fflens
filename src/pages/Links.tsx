@@ -9,9 +9,9 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Switch } from "@/components/ui/switch";
-import { Copy, Link2, ExternalLink, RefreshCw, CheckCircle2, XCircle, HelpCircle, Plus, Pencil, Trash2, Loader2, Sparkles, X } from "lucide-react";
+import { Copy, Link2, ExternalLink, RefreshCw, CheckCircle2, XCircle, HelpCircle, Plus, Pencil, Trash2, Loader2, Sparkles, X, Wrench } from "lucide-react";
 import LinkVerificationDialog from "@/components/LinkVerificationDialog";
-import { useProducts, useAffiliateLinks, useUserCredentials, useChannels, useProfile } from "@/hooks/useSupabaseData";
+import { useProducts, useAffiliateLinks, useUserCredentials, useChannels, useProfile, useRepairedLinkIds } from "@/hooks/useSupabaseData";
 import { generateAffiliateUrl, generateShortCode, healthStatusLabels, healthStatusColors } from "@/lib/affiliate-utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -64,6 +64,7 @@ export default function Links() {
   const { data: credentials } = useUserCredentials();
   const { data: channels } = useChannels();
   const { data: profile } = useProfile(user?.id);
+  const { data: repairedIds } = useRepairedLinkIds();
 
   const appendUtmParams = (url: string) => {
     if (!profile) return url;
@@ -182,8 +183,14 @@ export default function Links() {
     try {
       const { data, error } = await supabase.functions.invoke("check-link-health");
       if (error) throw error;
-      toast.success(`Checked ${data?.checked || 0} links`);
+      const repaired = data?.results?.filter((r: any) => r.repaired).length || 0;
+      if (repaired > 0) {
+        toast.success(`Checked ${data?.checked || 0} links — ${repaired} auto-repaired!`);
+      } else {
+        toast.success(`Checked ${data?.checked || 0} links`);
+      }
       queryClient.invalidateQueries({ queryKey: ["affiliate_links"] });
+      queryClient.invalidateQueries({ queryKey: ["repaired_link_ids"] });
     } catch (err: any) {
       toast.error(err.message || "Failed to check link health");
     } finally {
@@ -455,16 +462,24 @@ export default function Links() {
                     <TableCell className="text-right">{link.conversions || 0}</TableCell>
                     <TableCell className="text-right">${Number(link.revenue || 0).toLocaleString()}</TableCell>
                     <TableCell>
-                      <button
-                        className="flex items-center gap-1.5 cursor-pointer hover:opacity-80 transition-opacity"
-                        onClick={() => setVerificationLinkId(link.id)}
-                        title="Click to view verification details"
-                      >
-                        <HealthIcon status={link.health_status || "unknown"} />
-                        <Badge className={healthStatusColors[link.health_status || "unknown"]}>
-                          {healthStatusLabels[link.health_status || "unknown"]}
-                        </Badge>
-                      </button>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          className="flex items-center gap-1.5 cursor-pointer hover:opacity-80 transition-opacity"
+                          onClick={() => setVerificationLinkId(link.id)}
+                          title="Click to view verification details"
+                        >
+                          <HealthIcon status={link.health_status || "unknown"} />
+                          <Badge className={healthStatusColors[link.health_status || "unknown"]}>
+                            {healthStatusLabels[link.health_status || "unknown"]}
+                          </Badge>
+                        </button>
+                        {repairedIds?.has(link.id) && (
+                          <Badge className="bg-blue-100 text-blue-800 text-xs">
+                            <Wrench className="h-3 w-3 mr-0.5" />
+                            Repaired
+                          </Badge>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-1">
