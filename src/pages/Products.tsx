@@ -29,6 +29,8 @@ export default function Products() {
   const [brandFilter, setBrandFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [availabilityFilter, setAvailabilityFilter] = useState("all");
+  const [minPrice, setMinPrice] = useState("");
+  const [maxPrice, setMaxPrice] = useState("");
   const [addOpen, setAddOpen] = useState(false);
   const [newProduct, setNewProduct] = useState<ProductForm>({ ...emptyProduct });
   const [editingProduct, setEditingProduct] = useState<(ProductForm & { id: string }) | null>(null);
@@ -45,7 +47,9 @@ export default function Products() {
     const matchesBrand = brandFilter === "all" || p.brand_id === brandFilter;
     const matchesCategory = categoryFilter === "all" || p.category === categoryFilter;
     const matchesAvailability = availabilityFilter === "all" || p.availability_status === availabilityFilter;
-    return matchesSearch && matchesBrand && matchesCategory && matchesAvailability;
+    const matchesMinPrice = !minPrice || (p.price != null && Number(p.price) >= parseFloat(minPrice));
+    const matchesMaxPrice = !maxPrice || (p.price != null && Number(p.price) <= parseFloat(maxPrice));
+    return matchesSearch && matchesBrand && matchesCategory && matchesAvailability && matchesMinPrice && matchesMaxPrice;
   });
 
   const handleAddProduct = async () => {
@@ -176,6 +180,11 @@ export default function Products() {
                 {Object.entries(availabilityLabels).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}
               </SelectContent>
             </Select>
+            <div className="flex items-center gap-2">
+              <Input type="number" placeholder="Min $" className="w-[90px]" value={minPrice} onChange={(e) => setMinPrice(e.target.value)} />
+              <span className="text-muted-foreground text-sm">–</span>
+              <Input type="number" placeholder="Max $" className="w-[90px]" value={maxPrice} onChange={(e) => setMaxPrice(e.target.value)} />
+            </div>
           </div>
         </CardHeader>
         <CardContent>
