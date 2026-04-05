@@ -1,44 +1,93 @@
 
 
-## Real Dashboard Data from link_clicks
+## NeverDead Self-Healing Link Pipeline
 
 ### What We're Building
 
-Replace the hardcoded `mockClicksOverTime` chart on the dashboard with real data from the `link_clicks` table, and seed sample click data into the database so the chart isn't empty.
+An automated pipeline that, when a broken link is detected, finds the same product at another merchant, rebuilds the affiliate URL with the user's credentials, and silently updates the link — turning the existing health check into a self-healing system.
 
-### Step 1: Seed sample click data
+### Current State
 
-Write and run a script that inserts ~300 sample rows into `link_clicks` for the user's existing `affiliate_links`. Spread clicks across the last 30 days with realistic distribution (more on weekdays, some variance). Include varied `country_code`, `user_agent`, and `referrer` values.
+- `check-link-health` already detects broken links (step 1 is done)
+- Schema has the right pieces: `products.sku`, `networks.url_template`, `user_credentials.affiliate_id`
+- But nothing connects detection → lookup → rebuild → update
 
-Uses `psql` INSERT — no migration needed (data only).
+### Step 1: Add product identifiers for cross-merchant matching
 
-### Step 2: Add a query hook for click trends
+Add columns to `products` for universal identifiers (UPC/EAN barcode, MPN) so the same physical product can be matched across merchants.
 
-Create a `useClicksOverTime` hook in `useSupabaseData.ts` that:
-- Queries `link_clicks` joined through `affiliate_links` (to respect RLS)
-- Groups by date, counts clicks per day
-- Returns the last 30 days as `{ date, clicks }[]`
+Migration:
+- `ALTER TABLE products ADD COLUMN barcode text` (UPC/EAN)
+- `ALTER TABLE products ADD COLUMN mpn text` (manufacturer part number)
+- Create index on `(barcode)` and `(sku)` for fast lookup
 
-Conversions aren't tracked in `link_clicks`, so the chart will show clicks only (conversions line removed or shown as 0 from `affiliate_links.conversions` aggregate).
+### Step 2: Link affiliate_links to products properly
 
-### Step 3: Update Dashboard to use real data
+Currently `affiliate_links.product_id` exists but has no foreign key and products may not be populated. Ensure each link references a product so we know *what* to search for when it breaks.
 
-In `Index.tsx`:
-- Replace `mockClicksOverTime` import with the new `useClicksOverTime` hook
-- Show a loading skeleton while data loads
-- Keep the existing chart structure, just swap the data source
-- Remove the hardcoded `+12%`, `+18%` change labels (they're fake) — either compute real deltas or just remove them
+### Step 3: Build the self-heal logic in `check-link-health`
 
-### Step 4: Compute real stat changes (optional light version)
+Extend the existing edge function. After detecting a broken/warning link:
 
-For the stat cards, compare current period totals vs previous period from `link_clicks` to show actual trends, or simply show the raw numbers without fake percentages.
+1. **Lookup product**: Get the linked product's `sku`, `barcode`, `mpn` from `products`
+2. **Find alternatives**: Query `products` for rows with matching `barcode` OR `sku` that belong to a *different* `network_id`/`merchant_id`, and are `availability_status = 'in_stock'`
+3. **Check user credentials**: Verify the user has a `user_credentials` entry for the alternative product's `network_id`
+4. **Reconstruct URL**: Use `networks.url_template` + `user_credentials.affiliate_id` + product identifiers to build a new URL
+5. **Validate new URL**: Quick HEAD request to confirm it's not also broken
+6. **Update silently**: Write new `affiliate_url` to `affiliate_links`, log the swap in a new `link_repairs` audit table
+
+### Step 4: Create `link_repairs` audit table
+
+Track every auto-repair for transparency:
+
+```
+link_repairs (
+  id uuid PK,
+  link_id uuid NOT NULL,
+  old_url text,
+  new_url text,
+  old_product_id uuid,
+  new_product_id uuid,
+  reason text,        -- e.g. "404", "out_of_stock"
+  repaired_at timestamptz DEFAULT now()
+)
+```
+
+RLS: Users can view repairs of own links (same pattern as `link_verifications`).
+
+### Step 5: UI — show repair history
+
+- Add a "Repairs" tab or section in `LinkVerificationDialog` showing swap history
+- Badge on the Links page indicating "Auto-repaired" links
+- Toast notification when repairs happen during a health check
+
+### Step 6: Template-based URL reconstruction
+
+Define a simple templating convention for `networks.url_template`, e.g.:
+```
+https://www.shareasale.com/r.cfm?b={{merchant_id}}&u={{affiliate_id}}&m={{merchant_id}}&urllink={{product_url}}
+```
+
+The edge function replaces `{{affiliate_id}}`, `{{merchant_id}}`, `{{sku}}` etc. from `user_credentials` and `products`.
 
 ### Technical Details
 
 | Area | Change |
-|------|--------|
-| Script (one-time) | Seed `link_clicks` with ~300 rows via `psql` |
-| `useSupabaseData.ts` | Add `useClicksOverTime()` hook |
-| `Index.tsx` | Swap mock data for real query, remove fake change percentages |
-| `mock-data.ts` | Remove `mockClicksOverTime` export (keep other mocks for now) |
+|---|---|
+| Migration | Add `barcode`, `mpn` to `products`; create `link_repairs` table with RLS |
+| `check-link-health/index.ts` | Add self-heal logic after broken detection (~80 lines) |
+| `LinkVerificationDialog.tsx` | Add repair history section |
+| `Links.tsx` | Show "Auto-repaired" badge |
+| `useSupabaseData.ts` | Add `useLinkRepairs()` hook |
+
+### Dependencies / Prerequisites
+
+- Products table needs to be populated with real product data including `sku`/`barcode` for matching to work
+- `networks.url_template` needs actual templates per network
+- Users need `user_credentials` entries for multiple networks
+
+### Risks
+
+- If the product catalog is sparse, matching will rarely succeed — we should surface "no alternative found" clearly
+- URL template patterns vary wildly across networks — may need per-network custom logic eventually
 
