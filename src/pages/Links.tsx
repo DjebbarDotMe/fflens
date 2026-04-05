@@ -183,12 +183,37 @@ export default function Links() {
     try {
       const { data, error } = await supabase.functions.invoke("check-link-health");
       if (error) throw error;
-      const repaired = data?.results?.filter((r: any) => r.repaired).length || 0;
+
+      const results = data?.results || [];
+      const repaired = results.filter((r: any) => r.repaired).length;
+      const broken = results.filter((r: any) => r.overall_status === "broken" && !r.repaired);
+      const outOfStock = results.filter((r: any) =>
+        r.issues?.some((i: string) => i.toLowerCase().includes("out of stock"))
+      );
+
+      // Summary toast
       if (repaired > 0) {
         toast.success(`Checked ${data?.checked || 0} links — ${repaired} auto-repaired!`);
       } else {
         toast.success(`Checked ${data?.checked || 0} links`);
       }
+
+      // Proactive alerts for broken links
+      if (broken.length > 0) {
+        toast.error(
+          `${broken.length} broken link${broken.length > 1 ? "s" : ""} detected — no alternative found. Review and update manually.`,
+          { duration: 8000 }
+        );
+      }
+
+      // Proactive alerts for out-of-stock products
+      if (outOfStock.length > 0) {
+        toast.warning(
+          `${outOfStock.length} link${outOfStock.length > 1 ? "s" : ""} point${outOfStock.length === 1 ? "s" : ""} to out-of-stock products. Earnings may be affected.`,
+          { duration: 8000 }
+        );
+      }
+
       queryClient.invalidateQueries({ queryKey: ["affiliate_links"] });
       queryClient.invalidateQueries({ queryKey: ["repaired_link_ids"] });
     } catch (err: any) {
