@@ -29,6 +29,8 @@ export default function Products() {
   const [brandFilter, setBrandFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [availabilityFilter, setAvailabilityFilter] = useState("all");
+  const [minPrice, setMinPrice] = useState("");
+  const [maxPrice, setMaxPrice] = useState("");
   const [addOpen, setAddOpen] = useState(false);
   const [newProduct, setNewProduct] = useState<ProductForm>({ ...emptyProduct });
   const [editingProduct, setEditingProduct] = useState<(ProductForm & { id: string }) | null>(null);
