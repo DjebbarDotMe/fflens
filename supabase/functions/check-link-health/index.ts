@@ -246,24 +246,35 @@ async function attemptSelfHeal(
 
   if (!product) return { repaired: false };
 
-  // 2. Build matching conditions — find same product at different merchant
-  let query = supabaseAdmin
-    .from("products")
-    .select("id, sku, network_id, merchant_id, affiliate_url_template")
-    .eq("availability_status", "in_stock")
-    .neq("id", product.id);
+  // 2. Cross-network dedup: find same product at different merchant
+  //    Priority: barcode (strongest) > sku > mpn (weakest)
+  const identifiers: { field: string; value: string }[] = [];
+  if (product.barcode) identifiers.push({ field: "barcode", value: product.barcode });
+  if (product.sku) identifiers.push({ field: "sku", value: product.sku });
+  if (product.mpn) identifiers.push({ field: "mpn", value: product.mpn });
 
-  // Match by barcode first (strongest match), then sku
-  if (product.barcode) {
-    query = query.eq("barcode", product.barcode);
-  } else if (product.sku) {
-    query = query.eq("sku", product.sku);
-  } else {
-    return { repaired: false }; // No identifiers to match on
+  if (identifiers.length === 0) return { repaired: false };
+
+  // Try each identifier in priority order for best dedup match
+  let alternatives: any[] = [];
+  for (const { field, value } of identifiers) {
+    const { data } = await supabaseAdmin
+      .from("products")
+      .select("id, sku, network_id, merchant_id, affiliate_url_template, barcode, mpn")
+      .eq("availability_status", "in_stock")
+      .neq("id", product.id)
+      .eq(field, value)
+      .limit(10);
+
+    if (data && data.length > 0) {
+      // Deduplicate: prefer alternatives on different networks
+      alternatives = data.filter((a: any) => a.network_id !== product.network_id);
+      if (alternatives.length === 0) alternatives = data;
+      break;
+    }
   }
 
-  const { data: alternatives } = await query.limit(10);
-  if (!alternatives || alternatives.length === 0) return { repaired: false };
+  if (alternatives.length === 0) return { repaired: false };
 
   // 3. Try each alternative
   for (const alt of alternatives) {
