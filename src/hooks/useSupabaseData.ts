@@ -131,6 +131,19 @@ export function useLinkRepairs(linkId: string | null) {
   });
 }
 
+export function useRepairedLinkIds() {
+  return useQuery({
+    queryKey: ["repaired_link_ids"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("link_repairs")
+        .select("link_id");
+      if (error) throw error;
+      return new Set((data || []).map((r: any) => r.link_id));
+    },
+  });
+}
+
 export function useProfile(userId: string | undefined) {
   return useQuery({
     queryKey: ["profile", userId],
