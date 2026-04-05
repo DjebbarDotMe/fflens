@@ -11,7 +11,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Switch } from "@/components/ui/switch";
 import { Copy, Link2, ExternalLink, RefreshCw, CheckCircle2, XCircle, HelpCircle, Plus, Pencil, Trash2, Loader2, Sparkles, X } from "lucide-react";
 import LinkVerificationDialog from "@/components/LinkVerificationDialog";
-import { useProducts, useAffiliateLinks, useUserCredentials, useChannels, useProfile } from "@/hooks/useSupabaseData";
+import { useProducts, useAffiliateLinks, useUserCredentials, useChannels, useProfile, useLinkRepairs } from "@/hooks/useSupabaseData";
 import { generateAffiliateUrl, generateShortCode, healthStatusLabels, healthStatusColors } from "@/lib/affiliate-utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
