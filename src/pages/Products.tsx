@@ -47,7 +47,9 @@ export default function Products() {
     const matchesBrand = brandFilter === "all" || p.brand_id === brandFilter;
     const matchesCategory = categoryFilter === "all" || p.category === categoryFilter;
     const matchesAvailability = availabilityFilter === "all" || p.availability_status === availabilityFilter;
-    return matchesSearch && matchesBrand && matchesCategory && matchesAvailability;
+    const matchesMinPrice = !minPrice || (p.price != null && Number(p.price) >= parseFloat(minPrice));
+    const matchesMaxPrice = !maxPrice || (p.price != null && Number(p.price) <= parseFloat(maxPrice));
+    return matchesSearch && matchesBrand && matchesCategory && matchesAvailability && matchesMinPrice && matchesMaxPrice;
   });
 
   const handleAddProduct = async () => {
