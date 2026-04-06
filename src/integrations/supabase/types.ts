@@ -139,6 +139,42 @@ export type Database = {
         }
         Relationships: []
       }
+      feed_sync_logs: {
+        Row: {
+          completed_at: string | null
+          error_message: string | null
+          feed_source: string
+          id: string
+          records_failed: number | null
+          records_processed: number | null
+          started_at: string | null
+          status: string
+          user_id: string
+        }
+        Insert: {
+          completed_at?: string | null
+          error_message?: string | null
+          feed_source: string
+          id?: string
+          records_failed?: number | null
+          records_processed?: number | null
+          started_at?: string | null
+          status?: string
+          user_id: string
+        }
+        Update: {
+          completed_at?: string | null
+          error_message?: string | null
+          feed_source?: string
+          id?: string
+          records_failed?: number | null
+          records_processed?: number | null
+          started_at?: string | null
+          status?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       link_clicks: {
         Row: {
           clicked_at: string
@@ -334,19 +370,25 @@ export type Database = {
       products: {
         Row: {
           affiliate_url_template: string | null
+          asin: string | null
           availability_status: Database["public"]["Enums"]["availability_status"]
           barcode: string | null
           brand_id: string | null
           category: string | null
+          commission_rate: number | null
+          commissionable: boolean | null
           created_at: string
           currency: string
           description: string | null
+          feed_source: string | null
+          feed_synced_at: string | null
           id: string
           image_url: string | null
           merchant_id: string | null
           mpn: string | null
           network_id: string | null
           price: number | null
+          sale_price: number | null
           sku: string
           status: string
           title: string
@@ -354,19 +396,25 @@ export type Database = {
         }
         Insert: {
           affiliate_url_template?: string | null
+          asin?: string | null
           availability_status?: Database["public"]["Enums"]["availability_status"]
           barcode?: string | null
           brand_id?: string | null
           category?: string | null
+          commission_rate?: number | null
+          commissionable?: boolean | null
           created_at?: string
           currency?: string
           description?: string | null
+          feed_source?: string | null
+          feed_synced_at?: string | null
           id?: string
           image_url?: string | null
           merchant_id?: string | null
           mpn?: string | null
           network_id?: string | null
           price?: number | null
+          sale_price?: number | null
           sku: string
           status?: string
           title: string
@@ -374,19 +422,25 @@ export type Database = {
         }
         Update: {
           affiliate_url_template?: string | null
+          asin?: string | null
           availability_status?: Database["public"]["Enums"]["availability_status"]
           barcode?: string | null
           brand_id?: string | null
           category?: string | null
+          commission_rate?: number | null
+          commissionable?: boolean | null
           created_at?: string
           currency?: string
           description?: string | null
+          feed_source?: string | null
+          feed_synced_at?: string | null
           id?: string
           image_url?: string | null
           merchant_id?: string | null
           mpn?: string | null
           network_id?: string | null
           price?: number | null
+          sale_price?: number | null
           sku?: string
           status?: string
           title?: string
