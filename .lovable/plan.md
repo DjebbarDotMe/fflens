@@ -1,93 +1,43 @@
 
 
-## NeverDead Self-Healing Link Pipeline
+## Migration: Extend Products + Add Feed Sync Infrastructure
 
-### What We're Building
+### What's needed
 
-An automated pipeline that, when a broken link is detected, finds the same product at another merchant, rebuilds the affiliate URL with the user's credentials, and silently updates the link — turning the existing health check into a self-healing system.
+Six new columns on `products`, one unique index, one new table, and one data insert.
 
-### Current State
+### Migration SQL
 
-- `check-link-health` already detects broken links (step 1 is done)
-- Schema has the right pieces: `products.sku`, `networks.url_template`, `user_credentials.affiliate_id`
-- But nothing connects detection → lookup → rebuild → update
+**1. Add missing columns to `products`:**
+- `asin text` — Amazon Standard ID
+- `sale_price numeric` — discounted price
+- `commissionable boolean DEFAULT true` — whether link earns commission
+- `commission_rate numeric` — percentage rate
+- `feed_source text` — origin feed identifier
+- `feed_synced_at timestamptz` — last sync timestamp
 
-### Step 1: Add product identifiers for cross-merchant matching
+**2. Create unique dedup index:**
+- `CREATE UNIQUE INDEX idx_products_network_merchant_sku ON products (network_id, merchant_id, sku)` — prevents duplicate products per network+merchant
 
-Add columns to `products` for universal identifiers (UPC/EAN barcode, MPN) so the same physical product can be matched across merchants.
-
-Migration:
-- `ALTER TABLE products ADD COLUMN barcode text` (UPC/EAN)
-- `ALTER TABLE products ADD COLUMN mpn text` (manufacturer part number)
-- Create index on `(barcode)` and `(sku)` for fast lookup
-
-### Step 2: Link affiliate_links to products properly
-
-Currently `affiliate_links.product_id` exists but has no foreign key and products may not be populated. Ensure each link references a product so we know *what* to search for when it breaks.
-
-### Step 3: Build the self-heal logic in `check-link-health`
-
-Extend the existing edge function. After detecting a broken/warning link:
-
-1. **Lookup product**: Get the linked product's `sku`, `barcode`, `mpn` from `products`
-2. **Find alternatives**: Query `products` for rows with matching `barcode` OR `sku` that belong to a *different* `network_id`/`merchant_id`, and are `availability_status = 'in_stock'`
-3. **Check user credentials**: Verify the user has a `user_credentials` entry for the alternative product's `network_id`
-4. **Reconstruct URL**: Use `networks.url_template` + `user_credentials.affiliate_id` + product identifiers to build a new URL
-5. **Validate new URL**: Quick HEAD request to confirm it's not also broken
-6. **Update silently**: Write new `affiliate_url` to `affiliate_links`, log the swap in a new `link_repairs` audit table
-
-### Step 4: Create `link_repairs` audit table
-
-Track every auto-repair for transparency:
-
+**3. Create `feed_sync_logs` table:**
 ```
-link_repairs (
-  id uuid PK,
-  link_id uuid NOT NULL,
-  old_url text,
-  new_url text,
-  old_product_id uuid,
-  new_product_id uuid,
-  reason text,        -- e.g. "404", "out_of_stock"
-  repaired_at timestamptz DEFAULT now()
+feed_sync_logs (
+  id uuid PK DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  feed_source text NOT NULL,
+  status text NOT NULL DEFAULT 'pending',
+  records_processed integer DEFAULT 0,
+  records_failed integer DEFAULT 0,
+  error_message text,
+  started_at timestamptz DEFAULT now(),
+  completed_at timestamptz
 )
 ```
+- Enable RLS: users can SELECT/INSERT their own rows (`user_id = auth.uid()`)
 
-RLS: Users can view repairs of own links (same pattern as `link_verifications`).
+**4. Insert `affiliate_com` network row:**
+- Using the insert tool (data operation, not schema): name "Affiliate.com", slug "affiliate_com", url_template with `{{affiliate_id}}` placeholders
 
-### Step 5: UI — show repair history
-
-- Add a "Repairs" tab or section in `LinkVerificationDialog` showing swap history
-- Badge on the Links page indicating "Auto-repaired" links
-- Toast notification when repairs happen during a health check
-
-### Step 6: Template-based URL reconstruction
-
-Define a simple templating convention for `networks.url_template`, e.g.:
-```
-https://www.shareasale.com/r.cfm?b={{merchant_id}}&u={{affiliate_id}}&m={{merchant_id}}&urllink={{product_url}}
-```
-
-The edge function replaces `{{affiliate_id}}`, `{{merchant_id}}`, `{{sku}}` etc. from `user_credentials` and `products`.
-
-### Technical Details
-
-| Area | Change |
-|---|---|
-| Migration | Add `barcode`, `mpn` to `products`; create `link_repairs` table with RLS |
-| `check-link-health/index.ts` | Add self-heal logic after broken detection (~80 lines) |
-| `LinkVerificationDialog.tsx` | Add repair history section |
-| `Links.tsx` | Show "Auto-repaired" badge |
-| `useSupabaseData.ts` | Add `useLinkRepairs()` hook |
-
-### Dependencies / Prerequisites
-
-- Products table needs to be populated with real product data including `sku`/`barcode` for matching to work
-- `networks.url_template` needs actual templates per network
-- Users need `user_credentials` entries for multiple networks
-
-### Risks
-
-- If the product catalog is sparse, matching will rarely succeed — we should surface "no alternative found" clearly
-- URL template patterns vary wildly across networks — may need per-network custom logic eventually
+### No code changes needed
+This is purely a database migration + one data insert. UI/code updates would follow separately if needed.
 
