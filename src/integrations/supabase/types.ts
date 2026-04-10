@@ -537,6 +537,10 @@ export type Database = {
     }
     Functions: {
       increment_click_count: { Args: { link_id: string }; Returns: undefined }
+      upsert_affiliate_products: {
+        Args: { p_network_id: string; p_products: Json }
+        Returns: Json
+      }
     }
     Enums: {
       availability_status: "in_stock" | "out_of_stock" | "unknown"

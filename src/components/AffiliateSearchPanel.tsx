@@ -15,6 +15,7 @@ import { useQueryClient } from "@tanstack/react-query";
 
 interface AffiliateProduct {
   name: string;
+  description: string | null;
   brand: string;
   barcode: string | null;
   asin: string | null;
@@ -45,121 +46,114 @@ export function AffiliateSearchPanel() {
   const [inStock, setInStock] = useState(false);
   const [onSale, setOnSale] = useState(false);
   const [results, setResults] = useState<AffiliateProduct[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
   const [searching, setSearching] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [searched, setSearched] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
-  const [importing, setImporting] = useState<Set<number>>(new Set());
+  const [importing, setImporting] = useState(false);
   const queryClient = useQueryClient();
+
+  const buildSearchBody = (page: number): Record<string, unknown> => {
+    const body: Record<string, unknown> = {};
+    if (keyword) body.keyword = keyword;
+    if (brand) body.brand = brand;
+    if (barcode) body.barcode = barcode;
+    if (asin) body.asin = asin;
+    if (priceMin) body.price_min = parseFloat(priceMin);
+    if (priceMax) body.price_max = parseFloat(priceMax);
+    if (inStock) body.in_stock = true;
+    if (onSale) body.on_sale = true;
+    body.limit = 50;
+    body.page = page;
+    return body;
+  };
 
   const handleSearch = async () => {
     setSearching(true);
     setSearched(true);
     setSelected(new Set());
+    setCurrentPage(1);
     try {
-      const body: Record<string, unknown> = {};
-      if (keyword) body.keyword = keyword;
-      if (brand) body.brand = brand;
-      if (barcode) body.barcode = barcode;
-      if (asin) body.asin = asin;
-      if (priceMin) body.price_min = parseFloat(priceMin);
-      if (priceMax) body.price_max = parseFloat(priceMax);
-      if (inStock) body.in_stock = true;
-      if (onSale) body.on_sale = true;
-      body.limit = 50;
-
-      const { data, error } = await supabase.functions.invoke("affiliate-search", { body });
+      const { data, error } = await supabase.functions.invoke("affiliate-search", {
+        body: buildSearchBody(1),
+      });
       if (error) throw error;
       if (data?.error) {
         toast.error(data.error);
         setResults([]);
+        setTotalCount(0);
         return;
       }
       setResults(data.products || []);
+      setTotalCount(data.total || 0);
       if ((data.products || []).length === 0) {
         toast.info("No products found matching your search.");
       }
     } catch (err: any) {
       toast.error(err.message || "Search failed");
       setResults([]);
+      setTotalCount(0);
     } finally {
       setSearching(false);
     }
   };
 
-  const importProduct = async (product: AffiliateProduct, index: number) => {
-    setImporting((prev) => new Set(prev).add(index));
+  const handleLoadMore = async () => {
+    const nextPage = currentPage + 1;
+    setLoadingMore(true);
     try {
-      // Look up or create brand
-      let brandId: string | null = null;
-      if (product.brand) {
-        const { data: existing } = await supabase
-          .from("brands")
-          .select("id")
-          .ilike("name", product.brand)
-          .maybeSingle();
-        if (existing) {
-          brandId = existing.id;
-        } else {
-          const { data: newBrand } = await supabase
-            .from("brands")
-            .insert({ name: product.brand })
-            .select("id")
-            .single();
-          brandId = newBrand?.id || null;
-        }
-      }
-
-      // Look up the affiliate.com network
-      const { data: network } = await supabase
-        .from("networks")
-        .select("id")
-        .eq("slug", "affiliate_com")
-        .maybeSingle();
-
-      const { error } = await supabase.from("products").upsert(
-        {
-          title: product.name,
-          sku: product.sku || `aff-${Date.now()}`,
-          brand_id: brandId,
-          network_id: network?.id || null,
-          price: product.regular_price || null,
-          sale_price: product.sale_price,
-          asin: product.asin,
-          barcode: product.barcode,
-          mpn: product.mpn,
-          commission_rate: product.commission_rate,
-          commissionable: true,
-          merchant_id: product.merchant_id || null,
-          affiliate_url_template: product.commission_url || null,
-          availability_status: product.in_stock ? "in_stock" : "out_of_stock",
-          category: product.category,
-          image_url: product.image_url,
-          currency: product.currency || "USD",
-          feed_source: "affiliate.com",
-          feed_synced_at: new Date().toISOString(),
-        },
-        { onConflict: "network_id,merchant_id,sku" }
-      );
-
-      if (error) throw error;
-      toast.success(`Imported "${product.name}"`);
-      queryClient.invalidateQueries({ queryKey: ["products"] });
-    } catch (err: any) {
-      toast.error(`Import failed: ${err.message}`);
-    } finally {
-      setImporting((prev) => {
-        const n = new Set(prev);
-        n.delete(index);
-        return n;
+      const { data, error } = await supabase.functions.invoke("affiliate-search", {
+        body: buildSearchBody(nextPage),
       });
+      if (error) throw error;
+      if (data?.error) {
+        toast.error(data.error);
+        return;
+      }
+      const newProducts = data.products || [];
+      if (newProducts.length === 0) {
+        toast.info("No more results.");
+        return;
+      }
+      setResults((prev) => [...prev, ...newProducts]);
+      setCurrentPage(nextPage);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to load more");
+    } finally {
+      setLoadingMore(false);
     }
   };
 
-  const importSelected = async () => {
-    for (const idx of selected) {
-      await importProduct(results[idx], idx);
+  const importProducts = async (productsToImport: AffiliateProduct[]) => {
+    setImporting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("import-affiliate-products", {
+        body: { products: productsToImport },
+      });
+      if (error) throw error;
+      if (data?.error) {
+        toast.error(data.error);
+        return;
+      }
+      const inserted = data.inserted ?? 0;
+      const failed = data.failed ?? 0;
+      toast.success(`Imported ${inserted} product${inserted !== 1 ? "s" : ""}${failed > 0 ? ` (${failed} failed)` : ""}`);
+      queryClient.invalidateQueries({ queryKey: ["products"] });
+      setSelected(new Set());
+    } catch (err: any) {
+      toast.error(`Import failed: ${err.message}`);
+    } finally {
+      setImporting(false);
     }
-    setSelected(new Set());
+  };
+
+  const importSingle = (product: AffiliateProduct) => importProducts([product]);
+
+  const importSelected = () => {
+    const products = Array.from(selected).map((i) => results[i]);
+    importProducts(products);
   };
 
   const toggleSelect = (idx: number) => {
@@ -175,6 +169,8 @@ export function AffiliateSearchPanel() {
     if (selected.size === results.length) setSelected(new Set());
     else setSelected(new Set(results.map((_, i) => i)));
   };
+
+  const hasMore = results.length < totalCount;
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
@@ -234,10 +230,12 @@ export function AffiliateSearchPanel() {
               <div className="space-y-2">
                 {results.length > 0 && (
                   <div className="flex items-center justify-between">
-                    <p className="text-sm text-muted-foreground">{results.length} result{results.length !== 1 ? "s" : ""}</p>
+                    <p className="text-sm text-muted-foreground">
+                      Showing {results.length} of {totalCount} result{totalCount !== 1 ? "s" : ""}
+                    </p>
                     {selected.size > 0 && (
-                      <Button size="sm" onClick={importSelected}>
-                        <Download className="mr-2 h-3.5 w-3.5" />
+                      <Button size="sm" onClick={importSelected} disabled={importing}>
+                        {importing ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Download className="mr-2 h-3.5 w-3.5" />}
                         Import {selected.size} selected
                       </Button>
                     )}
@@ -284,10 +282,10 @@ export function AffiliateSearchPanel() {
                               <Button
                                 size="sm"
                                 variant="outline"
-                                disabled={importing.has(i)}
-                                onClick={() => importProduct(p, i)}
+                                disabled={importing}
+                                onClick={() => importSingle(p)}
                               >
-                                {importing.has(i) ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                                <Download className="h-3.5 w-3.5" />
                               </Button>
                             </TableCell>
                           </TableRow>
@@ -296,6 +294,17 @@ export function AffiliateSearchPanel() {
                     </Table>
                   </div>
                 )}
+
+                {/* Load More */}
+                {hasMore && results.length > 0 && (
+                  <div className="flex justify-center pt-2">
+                    <Button variant="outline" onClick={handleLoadMore} disabled={loadingMore}>
+                      {loadingMore ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                      Load More
+                    </Button>
+                  </div>
+                )}
+
                 {searched && !searching && results.length === 0 && (
                   <p className="text-center py-6 text-muted-foreground text-sm">No results found. Try a different search.</p>
                 )}

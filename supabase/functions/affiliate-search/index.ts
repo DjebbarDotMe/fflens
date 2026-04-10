@@ -16,6 +16,7 @@ interface SearchRequest {
   in_stock?: boolean;
   on_sale?: boolean;
   limit?: number;
+  page?: number;
 }
 
 Deno.serve(async (req) => {
@@ -69,23 +70,49 @@ Deno.serve(async (req) => {
     if (body.in_stock != null) searchBody.in_stock = body.in_stock;
     if (body.on_sale != null) searchBody.on_sale = body.on_sale;
     searchBody.limit = body.limit ?? 25;
+    if (body.page != null) searchBody.page = body.page;
 
-    // TODO: Replace with actual Affiliate.com API base URL from your account
-    const API_BASE = "https://api.affiliate.com/v1/products/search";
+    const API_BASE = Deno.env.get("AFFILIATE_COM_BASE_URL") || "https://api.affiliate.com/v1/products/search";
 
-    const apiResponse = await fetch(API_BASE, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(searchBody),
-    });
+    // Fetch with 10s timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+    let apiResponse: Response;
+    try {
+      apiResponse = await fetch(API_BASE, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(searchBody),
+        signal: controller.signal,
+      });
+    } catch (err) {
+      if (err.name === "AbortError") {
+        return new Response(JSON.stringify({ error: "Affiliate.com API timed out. Please try again." }), {
+          status: 504,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      throw err;
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
+    // Forward rate-limit errors
+    if (apiResponse.status === 429) {
+      return new Response(JSON.stringify({ error: "Rate limited by Affiliate.com. Please wait a moment and try again." }), {
+        status: 429,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     if (!apiResponse.ok) {
       const errText = await apiResponse.text();
       console.error("Affiliate.com API error:", apiResponse.status, errText);
-      return new Response(JSON.stringify({ 
+      return new Response(JSON.stringify({
         error: `Affiliate.com API error: ${apiResponse.status}`,
         details: errText,
       }), {
@@ -96,9 +123,10 @@ Deno.serve(async (req) => {
 
     const apiData = await apiResponse.json();
 
-    // Normalize response to a consistent shape
+    // Normalize response
     const products = (apiData.results || apiData.products || apiData.data || []).map((item: any) => ({
       name: item.name || item.title || "",
+      description: item.description || item.long_description || null,
       brand: item.brand || "",
       barcode: item.barcode || item.ean || null,
       asin: item.asin || null,
@@ -118,7 +146,11 @@ Deno.serve(async (req) => {
       currency: item.currency || "USD",
     }));
 
-    return new Response(JSON.stringify({ products, total: apiData.total || products.length }), {
+    return new Response(JSON.stringify({
+      products,
+      total: apiData.total ?? apiData.total_count ?? products.length,
+      page: body.page ?? 1,
+    }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
