@@ -1,76 +1,77 @@
 
 
-## Integrate Affiliate.com Product Search API
+## Hardening the Affiliate.com Integration
 
-### Context
+### Current State
 
-Affiliate.com provides a RESTful Product Search API with JSON body-based queries. From their blog and docs, the API supports 30+ filterable fields (name, brand, barcode, ASIN, price, availability, on_sale, etc.) and returns normalized product data with commission URLs. Authentication uses an API token (team-based token management). Their public docs don't expose the exact base URL — you get that when you sign up at affiliate.com/pricing.
+The edge function and search UI are functional scaffolds. The audit correctly identifies gaps. Here's what's already covered vs what needs work:
 
-### What we'll build
+**Already handled:** `image_url`, `currency`, `category` are mapped in both the edge function normalizer and the frontend import. The `description` column exists in the schema but is not mapped.
 
-An edge function that proxies requests to the Affiliate.com Product Search API, and a frontend "Product Search" panel on the Products page that lets you search their catalog and import results into your local `products` table.
+**Needs work:** 5 areas below.
 
-### Architecture
+---
 
-```text
-┌─────────────┐     ┌──────────────────────┐     ┌─────────────────┐
-│  Products   │────▶│  Edge Function       │────▶│  Affiliate.com  │
-│  Page UI    │     │  affiliate-search    │     │  Product API    │
-│  (search    │◀────│  (proxies + injects  │◀────│                 │
-│   panel)    │     │   API key server-    │     │                 │
-│             │     │   side)              │     │                 │
-└─────────────┘     └──────────────────────┘     └─────────────────┘
-       │
-       ▼ "Import" button
-  ┌──────────┐
-  │ products │  (upsert using network_id + merchant_id + sku dedup index)
-  │  table   │
-  └──────────┘
-```
+### 1. Fix the N+1 Brand Lookup (Move import logic server-side)
 
-### Steps
+**Problem:** Bulk-importing 20 products fires 40+ individual DB queries from the browser (brand lookup + create + product upsert per row).
 
-**1. Store the API key as a secret**
-- Use `add_secret` to request `AFFILIATE_COM_API_KEY` from you
-- You'll get this token from your Affiliate.com dashboard under API settings
+**Fix:** Create a new edge function `import-affiliate-products` that:
+- Accepts an array of products in one POST
+- Performs brand lookup/create in a single batch (one query to find existing brands, one insert for new ones)
+- Does a single `products` upsert call with the full array
+- Logs the sync to `feed_sync_logs`
+- Returns success/failure counts
 
-**2. Create edge function `affiliate-search`**
-- Accepts POST with a search body: `{ keyword, brand, category, barcode, asin, price_min, price_max, in_stock, on_sale, limit }`
-- Validates input with Zod
-- Authenticates the caller (JWT check)
-- Forwards to Affiliate.com Product Search API with your API key server-side
-- Returns normalized results
+The frontend `AffiliateSearchPanel` import buttons will call this single endpoint instead of doing client-side DB operations.
 
-**3. Add "Search Affiliate.com" UI to Products page**
-- A collapsible panel at the top with search fields: keyword, brand, barcode/ASIN, price range, in-stock toggle, on-sale toggle
-- Results table showing: name, brand, price, sale price, merchant, network, availability
-- "Import" button per row (or bulk) that upserts into `products` table, mapping fields to your schema including `asin`, `barcode`, `sale_price`, `commission_rate`, `feed_source = 'affiliate.com'`
+### 2. Selective Upsert (Protect Manual Edits)
 
-**4. Map Affiliate.com response fields to your products schema**
+**Problem:** Re-importing overwrites user-edited titles and descriptions.
 
-| Affiliate.com field | Your column |
-|---------------------|-------------|
-| name | title |
-| brand | brand (lookup/create) |
-| barcode | barcode |
-| asin | asin |
-| sku / mpn | sku, mpn |
-| regular_price | price |
-| final_price / sale_price | sale_price |
-| commission_url | affiliate_url_template |
-| merchant_id | merchant_id |
-| network_name | network_id (lookup) |
-| in_stock | availability_status |
-| sale_discount | (derived) |
+**Fix:** In the new import edge function, use a raw SQL upsert via `supabase.rpc` that only updates volatile fields on conflict:
+- **Always updated on re-import:** `price`, `sale_price`, `availability_status`, `commission_rate`, `feed_synced_at`
+- **Only set on first insert:** `title`, `description`, `image_url`, `category`, `affiliate_url_template`
 
-### Prerequisite from you
+This is done with `ON CONFLICT ... DO UPDATE SET price = EXCLUDED.price, ...` (listing only volatile columns).
 
-You need an Affiliate.com account and API token. Sign up at [affiliate.com/pricing](https://www.affiliate.com/pricing) if you haven't already. Once you have the token, I'll prompt you to enter it as a secret.
+### 3. Pagination Support
 
-### Technical details
+**Problem:** Searching "Nike" returns thousands of results but we only fetch one page.
 
-- The edge function keeps your API key server-side (never exposed to the browser)
-- Upserts use the existing unique index `idx_products_network_merchant_sku` to avoid duplicates
-- `feed_source` is set to `'affiliate.com'` and `feed_synced_at` is set on import
-- The Affiliate.com API base URL will need to be confirmed from your account — their docs reference a Product Search endpoint but the exact URL is provided after signup
+**Fix:**
+- Add `page` parameter to the edge function, pass through to Affiliate.com API
+- Add "Load More" button in the UI that increments the page and appends results
+- Display total count from API response
+
+### 4. Base URL as a Secret
+
+**Problem:** The API base URL is hardcoded as a TODO placeholder.
+
+**Fix:** Add `AFFILIATE_COM_BASE_URL` as a second secret alongside the API key. The edge function reads it from `Deno.env.get("AFFILIATE_COM_BASE_URL")` with a sensible fallback.
+
+### 5. Error Handling & Description Mapping
+
+- Add timeout (10s) to the upstream `fetch` call
+- Forward `429` status with a user-friendly "rate limited" message
+- Map `description` field in both the normalizer and the import logic
+
+---
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `supabase/functions/affiliate-search/index.ts` | Add pagination param, base URL from env, timeout, 429 handling, description mapping |
+| `supabase/functions/import-affiliate-products/index.ts` | **New** — batch import with selective upsert, brand dedup, sync logging |
+| `src/components/AffiliateSearchPanel.tsx` | Replace client-side import with edge function call, add "Load More" button, add description to interface |
+| Migration | Create RPC function for selective upsert (`upsert_affiliate_products`) |
+
+### Secrets needed
+
+- `AFFILIATE_COM_BASE_URL` — will prompt you to enter it (can be done later alongside the API key)
+
+### Database migration
+
+One new Postgres function `upsert_affiliate_products` that takes a JSONB array and performs the selective upsert + brand resolution in a single transaction.
 
