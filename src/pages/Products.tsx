@@ -12,6 +12,7 @@ import { Plus, Search, Pencil, Trash2 } from "lucide-react";
 import { useProducts, useBrands } from "@/hooks/useSupabaseData";
 import { availabilityLabels, availabilityColors } from "@/lib/affiliate-utils";
 import { CsvImportDialog } from "@/components/CsvImportDialog";
+import { AffiliateSearchPanel } from "@/components/AffiliateSearchPanel";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
@@ -151,6 +152,8 @@ export default function Products() {
           </Dialog>
         </div>
       </div>
+
+      <AffiliateSearchPanel />
 
       <Card>
         <CardHeader>
