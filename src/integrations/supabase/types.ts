@@ -83,6 +83,7 @@ export type Database = {
       brands: {
         Row: {
           created_at: string
+          created_by: string | null
           id: string
           name: string
           network_id: string | null
@@ -91,6 +92,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          created_by?: string | null
           id?: string
           name: string
           network_id?: string | null
@@ -99,6 +101,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          created_by?: string | null
           id?: string
           name?: string
           network_id?: string | null
@@ -378,6 +381,7 @@ export type Database = {
           commission_rate: number | null
           commissionable: boolean | null
           created_at: string
+          created_by: string | null
           currency: string
           description: string | null
           feed_source: string | null
@@ -404,6 +408,7 @@ export type Database = {
           commission_rate?: number | null
           commissionable?: boolean | null
           created_at?: string
+          created_by?: string | null
           currency?: string
           description?: string | null
           feed_source?: string | null
@@ -430,6 +435,7 @@ export type Database = {
           commission_rate?: number | null
           commissionable?: boolean | null
           created_at?: string
+          created_by?: string | null
           currency?: string
           description?: string | null
           feed_source?: string | null
